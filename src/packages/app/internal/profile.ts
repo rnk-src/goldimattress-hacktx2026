@@ -7,13 +7,14 @@ export interface ProfileDeps {
   newId: () => string;
 }
 
+const MIN_BODY_KG = 20;
 const MAX_BODY_KG = 500;
 
 /** Plain digits with an optional . or , decimal. Returns kg, or null when it is not a usable weight. */
 function parseBodyKg(text: string): number | null {
   if (!/^\d+([.,]\d+)?$/.test(text)) return null;
   const kg = Number(text.replace(',', '.'));
-  return kg > 0 && kg <= MAX_BODY_KG ? kg : null;
+  return kg >= MIN_BODY_KG && kg <= MAX_BODY_KG ? kg : null;
 }
 
 const describePerson = (p: Person) =>
@@ -60,7 +61,7 @@ export async function mountProfileScreen(
     const weightText = weightInput.value.trim();
     const bodyMassKg = weightText === '' ? undefined : parseBodyKg(weightText);
     if (bodyMassKg === null) {
-      message.textContent = `Enter a body weight in kg, up to ${MAX_BODY_KG}, or leave it blank.`;
+      message.textContent = `Enter a body weight in kg, from ${MIN_BODY_KG} to ${MAX_BODY_KG}, or leave it blank.`;
       return;
     }
     button.disabled = true;
@@ -71,17 +72,21 @@ export async function mountProfileScreen(
         ...(bodyMassKg !== undefined && { bodyMassKg }),
         references: {},
       });
-      message.textContent = '';
       form.reset();
-      await renderList();
+      message.textContent = '';
     } catch (e) {
       message.textContent =
         e instanceof StoreFullError
           ? 'Phone storage is full. Free some space and try again.'
           : 'Could not save the profile. Try again.';
+      return;
     } finally {
       button.disabled = false;
     }
+    // The profile is saved by now, so a failure here must not read as "could not save".
+    await renderList().catch(() => {
+      message.textContent = 'Profile saved, but the list could not be refreshed.';
+    });
   });
 
   await renderList();

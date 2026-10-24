@@ -68,7 +68,7 @@ describe('profile screen', () => {
     expect(await store.listPeople()).toEqual([]);
   });
 
-  it.each(['abc', '-5', '0', '0x50', '1e2', '12abc', '501', 'Infinity'])('refuses the body weight %j and saves nothing', async (weight) => {
+  it.each(['abc', '-5', '0', '0.001', '1,000', '19', '0x50', '1e2', '12abc', '501', 'Infinity'])('refuses the body weight %j and saves nothing', async (weight) => {
     const store = createLocalStore(memoryStorage());
     await mountProfileScreen(root, { store, newId: ids() });
     submit('Ana', weight);
@@ -110,6 +110,20 @@ describe('profile screen', () => {
     await mountProfileScreen(root, { store, newId: ids() });
     submit('Ana', text);
     await vi.waitFor(async () => expect((await store.listPeople())[0]).toMatchObject({ bodyMassKg: kg }));
+  });
+
+  it('says it saved, not that it failed, when only refreshing the list fails', async () => {
+    const real = createLocalStore(memoryStorage());
+    let lists = 0;
+    const store: Store = {
+      ...real,
+      listPeople: () => (++lists === 1 ? real.listPeople() : Promise.reject(new Error('read failed'))),
+    };
+    await mountProfileScreen(root, { store, newId: ids() });
+    submit('Ana');
+    await vi.waitFor(() => expect(alertText()).toMatch(/saved/i));
+    expect(alertText()).not.toMatch(/could not save/i);
+    expect(await real.listPeople()).toHaveLength(1);
   });
 
   it('tells the user when the phone storage is full', async () => {

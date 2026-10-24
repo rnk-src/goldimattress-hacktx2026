@@ -1,6 +1,10 @@
 import type { Person, ReferenceStats, RepResult, Routine, Sample, TestRecord, Trace } from '../../domain';
 
-/** A trace whose samples are one base64 string of little-endian Float32 [t, ax, ay, az, ...]. */
+/**
+ * A trace whose samples are one base64 string of little-endian Float32 [t, ax, ay, az, ...].
+ * Float32 keeps about 7 digits, so a reloaded sample differs from the captured double by ~1e-7.
+ * `t` is seconds since the trace started (see `Sample`), which Float32 holds to well under 1 ms.
+ */
 export type StoredTrace = Omit<Trace, 'samples'> & { samples: string };
 
 type StoredRep = (

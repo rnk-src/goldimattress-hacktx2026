@@ -35,9 +35,10 @@ export class StoreFullError extends Error {
 }
 
 /** Browsers name the quota error differently: Chrome and Safari by name, old Firefox by code. */
-const isQuotaError = (e: unknown): boolean =>
-  e instanceof DOMException &&
-  (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22);
+const isQuotaError = (e: unknown): boolean => {
+  const { name, code } = (e ?? {}) as { name?: unknown; code?: unknown };
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || code === 22;
+};
 
 const KEY = 'goldimattress';
 
