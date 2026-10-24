@@ -9,7 +9,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/packages/{signal,session,listings}/**/*.ts'],
+    files: ['src/packages/{domain,signal,session,listings}/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-globals': [

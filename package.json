@@ -1,7 +1,7 @@
 {
   "name": "goldimattress",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.0.0",
+  "description": "Phone-only web app that compares mattress and cushion feel to a reference (HackTX 2026).",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,9 +11,6 @@
     "deps": "depcruise src --config .dependency-cruiser.cjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run deps"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "dependency-cruiser": "^18.7.0",
