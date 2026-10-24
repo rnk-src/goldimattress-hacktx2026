@@ -209,6 +209,12 @@ describe('capacity', () => {
     expect((await store.listTests()).map((t) => t.id)).toEqual(['t0']);
   });
 
+  it('recognises a quota error by its name, whichever realm threw it', async () => {
+    const quota = Object.assign(new Error('full'), { name: 'QuotaExceededError' });
+    const storage = { ...memoryStorage(), setItem: () => { throw quota; } };
+    await expect(createLocalStore(storage).savePerson(person('p1'))).rejects.toBeInstanceOf(StoreFullError);
+  });
+
   it('lets other storage errors through unchanged', async () => {
     const boom = new Error('disk on fire');
     const storage = { ...memoryStorage(), setItem: () => { throw boom; } };
