@@ -94,3 +94,9 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - Ball drop (phyphox "(In)elastic collision" or 240 fps video): gives coefficient of restitution, but a light probe.
 - LiDAR depth: needs a custom iOS app.
 - Hand press: no force reading.
+
+## Open questions
+- **Load source**: body sit-drop, plate, or sit-drop with a plate fallback.
+- **Height method**: marked guide + free-fall timing to correct speed and reject drops >15% off. A sit-drop uses impact-speed normalization instead.
+- **Display**: local Streamlit page with a live plot and a "Too hard / Too soft / Just right" verdict.
+- **Team**: roles are not yet assigned.
