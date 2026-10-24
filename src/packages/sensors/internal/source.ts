@@ -10,4 +10,6 @@ export interface SensorSource {
   stop(): void;
   /** Measured from sample times once at least 20 samples arrived; null before that. */
   readonly sampleRateHz: number | null;
+  /** The device's own `event.interval` in ms, when the source reports one. */
+  readonly eventIntervalMs?: number | null;
 }
