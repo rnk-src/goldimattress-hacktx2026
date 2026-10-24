@@ -15,6 +15,7 @@ function createAudioFake(currentTime = 10) {
   const context = {
     currentTime,
     destination: {},
+    close: () => Promise.resolve(),
     createGain: () => gain,
     createOscillator: () => ({
       frequency: {
@@ -182,5 +183,41 @@ describe('createBrowserCoach', () => {
 
     expect(releases).toBe(1);
     expect(requests).toBe(1);
+  });
+
+  it('releases a wake lock that arrives after keepAwake(false)', async () => {
+    let releases = 0;
+    let resolveRequest: (s: WakeLockSentinel) => void = () => undefined;
+    const sentinel = {
+      released: false,
+      release: () => {
+        releases += 1;
+        return Promise.resolve();
+      },
+    } as unknown as WakeLockSentinel;
+    const wakeLock = {
+      request: () => new Promise<WakeLockSentinel>((resolve) => (resolveRequest = resolve)),
+    } as WakeLock;
+    const coach = createBrowserCoach({ audio: () => createAudioFake().context, wakeLock });
+
+    const pending = coach.keepAwake(true);
+    await coach.keepAwake(false);
+    resolveRequest(sentinel);
+    await pending;
+
+    expect(releases).toBe(1);
+  });
+
+  it('cancels speech and closes audio when disposed', () => {
+    let cancels = 0;
+    let closes = 0;
+    const speech = { cancel: () => (cancels += 1) } as unknown as SpeechSynthesis;
+    const audio = { close: () => ((closes += 1), Promise.resolve()) } as unknown as AudioContext;
+    const coach = createBrowserCoach({ audio: () => audio, speech });
+
+    coach.dispose();
+
+    expect(cancels).toBe(1);
+    expect(closes).toBe(1);
   });
 });

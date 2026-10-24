@@ -3,7 +3,6 @@ import type { Coach } from '../coach';
 import type { Cue, Sample, Trace } from '../domain';
 import { createReplaySource, parseRecording } from '../sensors';
 import type { SensorSource } from '../sensors';
-import type { Store } from '../store';
 import { startApp } from './index';
 
 function coach(): Coach {
@@ -15,18 +14,8 @@ function coach(): Coach {
   };
 }
 
-function store(): Store {
-  return {
-    listPeople: () => Promise.resolve([]),
-    savePerson: () => Promise.resolve(),
-    findSurfaces: () => Promise.resolve([]),
-    saveSurface: () => Promise.resolve(),
-    saveTest: () => Promise.resolve(),
-    listTests: () => Promise.resolve([]),
-  };
-}
-
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
   document.body.replaceChildren();
   window.location.hash = '';
@@ -66,11 +55,9 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
-      newId: () => 'test-id',
     });
 
     const button = root.querySelector<HTMLButtonElement>('button[data-action="request-motion"]');
@@ -97,11 +84,9 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
-      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="request-motion"]')?.click();
@@ -126,11 +111,9 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
-      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="request-motion"]')?.click();
@@ -157,11 +140,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
-      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
-      newId: () => 'test-id',
     });
 
     const start = root.querySelector<HTMLButtonElement>('[data-action="start-capture"]');
@@ -195,16 +176,19 @@ describe('startApp', () => {
 
   it('exports the five captured windows as a parseable Recording', async () => {
     vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:test';
+    });
     const root = document.createElement('main');
     document.body.append(root);
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
-      newId: () => 'test-id',
     });
 
     const label = root.querySelector<HTMLInputElement>('[name="label"]');
@@ -217,10 +201,8 @@ describe('startApp', () => {
     await vi.advanceTimersByTimeAsync(130_000);
 
     const download = root.querySelector<HTMLAnchorElement>('[data-action="export-recording"]');
-    expect(download).not.toBeNull();
-    const href = download?.getAttribute('href') ?? '';
-    const json = decodeURIComponent(href.slice(href.indexOf(',') + 1));
-    const recording = parseRecording(JSON.parse(json));
+    expect(download?.getAttribute('href')).toBe('blob:test');
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
 
     expect(recording.label).toBe('showroom set 1');
     expect(recording.surface).toBe('Blue couch');
@@ -235,11 +217,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(5), { realtime: true }),
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
-      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
@@ -256,11 +236,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
-      newId: () => 'test-id',
     });
 
     const progress = root.querySelector('[data-repetition-progress]');
@@ -287,11 +265,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     const stop = startApp(root, {
       source,
-      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
-      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
@@ -300,6 +276,122 @@ describe('startApp', () => {
     expect(window.location.hash).toBe('#/permission');
     expect(root.querySelector('[data-action="request-motion"]')).not.toBeNull();
     stop();
+  });
+
+  it('lets the user retry when the motion permission request rejects', async () => {
+    const source: SensorSource = {
+      requestAccess: () => Promise.reject(new Error('NotAllowedError')),
+      start() {},
+      stop() {},
+      sampleRateHz: null,
+    };
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/permission';
+    startApp(root, {
+      source,
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'test phone',
+    });
+
+    const button = root.querySelector<HTMLButtonElement>('[data-action="request-motion"]');
+    button?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(button?.disabled).toBe(false);
+    expect(root.textContent).toContain('Could not request motion access');
+  });
+
+  it('stops early when no motion events arrive', async () => {
+    vi.useFakeTimers();
+    const awake: boolean[] = [];
+    let stops = 0;
+    const source: SensorSource = {
+      requestAccess: () => Promise.resolve('granted'),
+      start() {},
+      stop() {
+        stops += 1;
+      },
+      sampleRateHz: null,
+    };
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source,
+      makeCoach: () => ({
+        play() {},
+        keepAwake: (on) => {
+          awake.push(on);
+          return Promise.resolve();
+        },
+        setMuted() {},
+        dispose() {},
+      }),
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'test phone',
+    });
+
+    const start = root.querySelector<HTMLButtonElement>('[data-action="start-capture"]');
+    start?.click();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(root.textContent).toContain('No motion events arrived');
+    expect(start?.disabled).toBe(false);
+    expect(stops).toBe(1);
+    expect(awake).toEqual([true, false]);
+    await vi.advanceTimersByTimeAsync(130_000);
+    expect(root.textContent).not.toContain('Capture complete');
+  });
+
+  it('exports the repetitions it did capture when some windows are empty', async () => {
+    vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:partial';
+    });
+    let onSample: ((sample: Sample) => void) | undefined;
+    const source: SensorSource = {
+      requestAccess: () => Promise.resolve('granted'),
+      start(callback) {
+        onSample = callback;
+      },
+      stop() {},
+      sampleRateHz: null,
+    };
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source,
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'test phone',
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    let t = 0;
+    // Samples flow during the first three windows only.
+    for (let rep = 0; rep < 5; rep += 1) {
+      if (rep < 3) {
+        for (let i = 0; i < 4; i += 1) {
+          t += 1;
+          onSample?.({ t, ax: 0, ay: 9.81, az: 0 });
+          await vi.advanceTimersByTimeAsync(1_000);
+        }
+        await vi.advanceTimersByTimeAsync(2_000);
+      } else {
+        await vi.advanceTimersByTimeAsync(6_000);
+      }
+      await vi.advanceTimersByTimeAsync(20_000);
+    }
+
+    expect(root.textContent).toContain('Captured 3 of 5');
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
+    expect(recording.traces).toHaveLength(3);
   });
 
   it('lets the user mute and restore audio cues', () => {
@@ -317,11 +409,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace()),
-      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
-      newId: () => 'test-id',
     });
 
     const toggle = root.querySelector<HTMLButtonElement>('[data-action="toggle-sound"]');
@@ -358,11 +448,9 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source,
-      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
-      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();

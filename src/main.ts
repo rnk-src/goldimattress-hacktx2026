@@ -1,25 +1,12 @@
 import { startApp } from './packages/app';
 import { createBrowserCoach } from './packages/coach';
 import { createDeviceMotionSource } from './packages/sensors';
-import type { Store } from './packages/store';
 
 type MotionEventConstructor = typeof DeviceMotionEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 };
 
 type AudioContextConstructor = new () => AudioContext;
-
-const unavailableStore = (): Store => {
-  const notReady = () => Promise.reject(new Error('Local storage is not available in raw capture.'));
-  return {
-    listPeople: notReady,
-    savePerson: notReady,
-    findSurfaces: notReady,
-    saveSurface: notReady,
-    saveTest: notReady,
-    listTests: notReady,
-  };
-};
 
 const motionEvent = window.DeviceMotionEvent as MotionEventConstructor | undefined;
 const source = motionEvent
@@ -51,11 +38,12 @@ if (!window.location.hash) window.location.hash = '#/permission';
 
 const unmount = startApp(root, {
   source,
-  store: unavailableStore(),
   makeCoach,
   now: () => new Date(),
   device: navigator.userAgent,
-  newId: () => crypto.randomUUID(),
 });
 
-window.addEventListener('pagehide', unmount, { once: true });
+window.addEventListener('pagehide', (event) => {
+  // A persisted page may come back from the back/forward cache, so keep it intact.
+  if (!event.persisted) unmount();
+});

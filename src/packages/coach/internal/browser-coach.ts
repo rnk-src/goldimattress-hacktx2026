@@ -52,13 +52,20 @@ export function createBrowserCoach(env?: CoachEnv): Coach {
   let muted = false;
   let keepAwakeRequested = false;
   let wakeSentinel: WakeLockSentinel | null = null;
+  let acquiring = false;
 
   const acquireWakeLock = async () => {
-    if (!keepAwakeRequested || !env?.wakeLock || (wakeSentinel && !wakeSentinel.released)) return;
+    if (!keepAwakeRequested || !env?.wakeLock || acquiring || (wakeSentinel && !wakeSentinel.released)) return;
+    acquiring = true;
     try {
-      wakeSentinel = await env.wakeLock.request('screen');
+      const sentinel = await env.wakeLock.request('screen');
+      // Capture may have ended while the request was pending.
+      if (keepAwakeRequested) wakeSentinel = sentinel;
+      else void sentinel.release();
     } catch {
       wakeSentinel = null;
+    } finally {
+      acquiring = false;
     }
   };
   const onVisibilityChange = () => {
@@ -97,6 +104,8 @@ export function createBrowserCoach(env?: CoachEnv): Coach {
       const held = wakeSentinel;
       wakeSentinel = null;
       void held?.release();
+      env?.speech?.cancel();
+      void audio?.close();
     },
   };
 }

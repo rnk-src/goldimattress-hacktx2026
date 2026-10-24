@@ -12,8 +12,10 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
   let emitted = 0;
   let firstT = 0;
   let lastT = 0;
+  let intervalMs: number | null = null;
   const onMotion = (event: Event) => {
     const motion = event as Event & {
+      interval?: number;
       accelerationIncludingGravity: {
         x: number | null;
         y: number | null;
@@ -33,6 +35,7 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
     if (emitted === 0) firstT = t;
     lastT = t;
     emitted += 1;
+    if (typeof motion.interval === 'number') intervalMs = motion.interval;
     onSample?.({
       t,
       ax: acceleration.x,
@@ -52,11 +55,15 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
       emitted = 0;
       firstT = 0;
       lastT = 0;
+      intervalMs = null;
       env!.target.addEventListener('devicemotion', onMotion);
     },
     stop() {
       env?.target.removeEventListener('devicemotion', onMotion);
       onSample = null;
+    },
+    get eventIntervalMs() {
+      return intervalMs;
     },
     get sampleRateHz() {
       if (emitted < 20 || lastT <= firstT) return null;
