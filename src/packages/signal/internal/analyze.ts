@@ -1,12 +1,13 @@
 import type { ReferenceStats, RejectReason, RepResult, Trace } from '../../domain';
+import { repFeatures } from './features';
 import { assessHover } from './hover';
-import { estimateRate, magnitude } from './math';
+import { estimateRate, integrate, magnitude } from './math';
 import { routineSpec } from './routine';
 
 const G = 9.81;
 /** |a| this far above 1 g marks the impact, m/s². Above hover wobble, below the weakest real impact. */
 const IMPACT_EXCESS = 1.5;
-/** Walking back from the impact, |a| this far below 1 g still counts as the descent, m/s². */
+/** |a| this far below 1 g counts as the descent, m/s². */
 const DESCENT_DEFICIT = 0.5;
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
@@ -36,22 +37,40 @@ function leftSurface(trace: Trace, mags: readonly number[], impact: number): boo
   return false;
 }
 
+/**
+ * v = −∫(|a| − g)dt from the last hover sample to the impact. The impact falls somewhere between
+ * the last descent sample and the first impact sample, so half a step of that deficit is added.
+ */
+function impactSpeedOf(trace: Trace, mags: readonly number[], descentStart: number, impact: number): number {
+  const from = Math.max(0, descentStart - 1);
+  const t = trace.samples.slice(from, impact).map((s) => s.t);
+  const excess = mags.slice(from, impact).map((m) => m - G);
+  const step = trace.samples[impact]!.t - trace.samples[impact - 1]!.t;
+  return -(integrate(t, excess) + (step / 2) * excess[excess.length - 1]!);
+}
+
 /** Full per-rep pipeline. Never throws on bad data. */
 export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (estimateRate(trace.samples.map((s) => s.t)) < MIN_RATE_HZ) {
     return reject(trace, ['low-sample-rate']);
   }
   const mags = trace.samples.map(magnitude);
-  const impact = mags.findIndex((m) => m - G > IMPACT_EXCESS);
-  if (impact < 0) return reject(trace, ['no-drop-found']);
+  const trigger = mags.findIndex((m) => m - G > IMPACT_EXCESS);
+  if (trigger < 0) return reject(trace, ['no-drop-found']);
+  // A light-damped impact rises slowly, so back up over the rise to the end of the descent.
+  // shortcut: a descent with less than DESCENT_DEFICIT of deficit is not seen, so the rep is rejected as not-still.
+  let impact = trigger;
+  while (impact > 0 && G - mags[impact - 1]! <= DESCENT_DEFICIT) impact--;
   let descentStart = impact;
   while (descentStart > 0 && G - mags[descentStart - 1]! > DESCENT_DEFICIT) descentStart--;
   const { hoverMinS } = routineSpec(trace.routine);
   const hoverStartT = trace.samples[descentStart]!.t - hoverMinS;
   const hover = trace.samples.slice(0, descentStart).filter((s) => s.t >= hoverStartT - EPS);
-  const reasons: RejectReason[] = assessHover(hover, trace.routine, ref).reasons;
+  const assessment = assessHover(hover, trace.routine, ref);
+  const reasons: RejectReason[] = [...assessment.reasons];
   if (leftSurface(trace, mags, impact)) reasons.push('left-surface');
   if (reasons.length > 0) return reject(trace, reasons);
-  // shortcut: placeholder until #10 builds the ok path.
-  return reject(trace, []);
+  const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
+  const features = repFeatures(trace.samples, impact, impactSpeed);
+  return { ok: true, features, impactSpeed, leanDeg: assessment.leanDeg, trace };
 }

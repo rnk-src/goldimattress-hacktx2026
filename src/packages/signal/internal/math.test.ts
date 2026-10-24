@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateRate, findPeaks, integrate, magnitude, std } from './math';
+import { estimateRate, findPeaks, integrate, magnitude, smooth3, std } from './math';
 
 describe('magnitude', () => {
   it('is the Euclidean norm of the axes', () => {
@@ -72,5 +72,16 @@ describe('estimateRate', () => {
 
   it('is 0 for fewer than 2 times', () => {
     expect(estimateRate([0.5])).toBe(0);
+  });
+});
+
+describe('smooth3', () => {
+  it('averages each value with its neighbours', () => {
+    expect(smooth3([0, 3, 0, 3, 0])).toEqual([1.5, 1, 2, 1, 1.5]);
+  });
+
+  it('keeps the length and handles a single value', () => {
+    expect(smooth3([4])).toEqual([4]);
+    expect(smooth3([])).toEqual([]);
   });
 });

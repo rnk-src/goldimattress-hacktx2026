@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReferenceStats, Routine, Sample } from '../domain';
-import { synthRep } from '../testkit';
+import { expectedFeatures, synthRep } from '../testkit';
 import type { SynthOptions } from '../testkit';
 import { analyzeRep, assessHover, routineSpec } from './index';
 
@@ -102,9 +102,9 @@ describe('analyzeRep rejection', () => {
     expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
   });
 
-  it.each([0.5, 1, 3, 4.5])('finds a drop that starts %s s into a 6 s trace and judges its hover', (hoverS) => {
+  it.each([0.5, 1, 3, 4.5])('accepts a rep whose drop starts %s s into a 6 s trace', (hoverS) => {
     const result = analyzeRep(synthRep({ hoverS, durationS: 6, leanDeg: 15 }));
-    expect(result.ok === false && result.reasons).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 
   it('rejects a moving hover as not-still', () => {
@@ -131,5 +131,97 @@ describe('analyzeRep rejection', () => {
   it('does not throw on an empty trace', () => {
     const trace = { ...synthRep(), samples: [] };
     expect(analyzeRep(trace).ok).toBe(false);
+  });
+});
+
+describe('analyzeRep impact speed', () => {
+  it.each([0.3, 0.6, 1.0])('measures an impact speed of %s m/s within 10%%', (impactSpeed) => {
+    const result = analyzeRep(synthRep({ impactSpeed, bounceHz: 1.5, bounceRatio: 0.3 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(Math.abs(result.impactSpeed / impactSpeed - 1)).toBeLessThan(0.1);
+  });
+});
+
+/** The rate x bounce grid from the spec. A seeded fraction of a sample shifts the drop between samples. */
+const GRID = [60, 100].flatMap((sampleRateHz) =>
+  [1, 1.5, 2, 3].flatMap((bounceHz) =>
+    [0.05, 0.2, 0.4, 0.8].map((bounceRatio, i) => {
+      const phase = ((bounceHz * 7 + i * 3 + sampleRateHz) % 10) / 10;
+      const opts: SynthOptions = {
+        sampleRateHz,
+        bounceHz,
+        bounceRatio,
+        // A fast hit on a springy surface nearly leaves it, which analyzeRep rejects as left-surface.
+        impactSpeed: bounceRatio >= 0.8 ? 0.4 : 0.6,
+        hoverS: 1 + phase / sampleRateHz,
+        durationS: 16,
+        seed: 100 * bounceHz + i,
+      };
+      return [`${sampleRateHz} Hz, ${bounceHz} Hz bounce, ratio ${bounceRatio}`, opts] as const;
+    }),
+  ),
+);
+
+describe('analyzeRep features against the analytic answers', () => {
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('peakOverV within 10% at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Math.abs(result.features.peakOverV / expectedFeatures(opts).peakOverV - 1)).toBeLessThan(0.1);
+  });
+
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('stopTime within 0.03 s at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Math.abs(result.features.stopTime - expectedFeatures(opts).stopTime)).toBeLessThan(0.03);
+  });
+
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('bounceRatio within 0.05 at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Math.abs(result.features.bounceRatio - expectedFeatures(opts).bounceRatio)).toBeLessThan(0.05);
+  });
+
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('settleTime within 0.6 bounce periods at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The last marginal peak decides the answer, so noise can move it by about half a bounce period.
+    expect(Math.abs(result.features.settleTime - expectedFeatures(opts).settleTime)).toBeLessThan(
+      0.6 / opts.bounceHz!,
+    );
+  });
+
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('impact speed within 10% at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(Math.abs(result.impactSpeed / opts.impactSpeed! - 1)).toBeLessThan(0.1);
+  });
+
+  it('reports bounceRatio 0 when there is no second bounce peak', () => {
+    const result = analyzeRep(synthRep({ bounceRatio: 0, seed: 4 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.features.bounceRatio).toBe(0);
+  });
+
+  it('gives the same features for a phone turned about its torso axis or with flipped axes', () => {
+    const opts: SynthOptions = { bounceHz: 1.5, bounceRatio: 0.3, seed: 9, noise: 0 };
+    const plain = analyzeRep(synthRep(opts));
+    const turned = analyzeRep(synthRep({ ...opts, rotation: [0, 70, 0] }));
+    const base = synthRep(opts);
+    const flipped = analyzeRep({
+      ...base,
+      samples: base.samples.map((s) => ({ ...s, ax: -s.ax, ay: -s.ay })),
+    });
+    expect(plain.ok && turned.ok && flipped.ok).toBe(true);
+    if (!plain.ok || !turned.ok || !flipped.ok) return;
+    for (const other of [turned, flipped]) {
+      for (const key of ['peakOverV', 'stopTime', 'bounceRatio', 'settleTime'] as const) {
+        expect(other.features[key]).toBeCloseTo(plain.features[key], 6);
+      }
+      expect(other.impactSpeed).toBeCloseTo(plain.impactSpeed, 6);
+    }
   });
 });
