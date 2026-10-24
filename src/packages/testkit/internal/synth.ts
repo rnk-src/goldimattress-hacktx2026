@@ -4,6 +4,21 @@ import { createRng } from './rng';
 
 export const GRAVITY = 9.81;
 
+/** What each `SynthOptions` field means when left out. */
+export const DEFAULTS = {
+  routine: 'sit-drop',
+  sampleRateHz: 60,
+  impactSpeed: 0.6,
+  bounceHz: 2,
+  bounceRatio: 0.4,
+  leanDeg: 15,
+  hoverS: 1,
+  dropS: 0.3,
+  durationS: 3.5,
+  noise: 0.05,
+  seed: 1,
+} as const;
+
 export type SynthFailure =
   | 'none'
   | 'tilt'
@@ -62,17 +77,17 @@ function upAxis(routine: Routine, leanDeg: number): Vec {
 
 /** One rep: a still hover, then a drop onto a damped spring. Same options and seed give the same trace. */
 export function synthRep(opts: SynthOptions = {}): Trace {
-  const routine = opts.routine ?? 'sit-drop';
-  const sampleRateHz = opts.sampleRateHz ?? 60;
-  const durationS = opts.durationS ?? 3.5;
-  const noise = opts.noise ?? 0.05;
+  const routine = opts.routine ?? DEFAULTS.routine;
+  const sampleRateHz = opts.sampleRateHz ?? DEFAULTS.sampleRateHz;
+  const durationS = opts.durationS ?? DEFAULTS.durationS;
+  const noise = opts.noise ?? DEFAULTS.noise;
   const rotation = opts.rotation ?? [0, 0, 0];
-  const up = upAxis(routine, opts.leanDeg ?? 15);
-  const impactSpeed = opts.impactSpeed ?? 0.6;
-  const bounceHz = opts.bounceHz ?? 2;
-  const bounceRatio = opts.bounceRatio ?? 0.4;
-  const hoverS = opts.hoverS ?? 1;
-  const dropS = opts.dropS ?? 0.3;
+  const up = upAxis(routine, opts.leanDeg ?? DEFAULTS.leanDeg);
+  const impactSpeed = opts.impactSpeed ?? DEFAULTS.impactSpeed;
+  const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
+  const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
+  const hoverS = opts.hoverS ?? DEFAULTS.hoverS;
+  const dropS = opts.dropS ?? DEFAULTS.dropS;
   if (impactSpeed > GRAVITY * dropS) {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
@@ -87,7 +102,7 @@ export function synthRep(opts: SynthOptions = {}): Trace {
     if (t < impactT) return GRAVITY - impactSpeed / dropS;
     return Math.max(0, GRAVITY + excessAcceleration(t - impactT, impactSpeed, bounceHz, bounceRatio));
   };
-  const rng = createRng(opts.seed ?? 1);
+  const rng = createRng(opts.seed ?? DEFAULTS.seed);
 
   const count = Math.round(durationS * sampleRateHz);
   const samples: Sample[] = [];
