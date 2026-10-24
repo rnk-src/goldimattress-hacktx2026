@@ -40,3 +40,17 @@ export function findPeaks(ys: readonly number[], opts: { minHeight?: number } = 
   }
   return peaks;
 }
+
+/** Samples per second from the first and last sample time. 0 for fewer than 2 times. */
+export function estimateRate(times: readonly number[]): number {
+  if (times.length < 2) return 0;
+  return (times.length - 1) / (times[times.length - 1]! - times[0]!);
+}
+
+/** Moving average over each value and its neighbours. Ends average over the two values they have. */
+export function smooth3(ys: readonly number[]): number[] {
+  return ys.map((_, i) => {
+    const window = ys.slice(Math.max(0, i - 1), i + 2);
+    return window.reduce((sum, y) => sum + y, 0) / window.length;
+  });
+}
