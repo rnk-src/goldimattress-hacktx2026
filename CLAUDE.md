@@ -100,3 +100,10 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - **Height method**: marked guide + free-fall timing to correct speed and reject drops >15% off. A sit-drop uses impact-speed normalization instead.
 - **Display**: local Streamlit page with a live plot and a "Too hard / Too soft / Just right" verdict.
 - **Team**: roles are not yet assigned.
+
+## Git workflow
+- `main` stays clean. Each task gets a branch: `feat/<name>`, `fix/<name>`, `docs/<name>`.
+- Each branch lives in a worktree: `../goldimattress-hacktx2026-worktrees/<branch-with-dashes>`.
+  - Create: `git worktree add ../goldimattress-hacktx2026-worktrees/feat-x -b feat/x`.
+- Keep commits small. Use short, descriptive subjects.
+- Merge with `git merge --no-ff <branch>` on main, push, then remove the worktree and delete the branch.
