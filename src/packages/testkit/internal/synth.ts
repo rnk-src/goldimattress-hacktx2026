@@ -19,6 +19,12 @@ export const DEFAULTS = {
   seed: 1,
 } as const;
 
+/** Frequency of the hover wobble for the 'moving-hover' failure, Hz. */
+const WOBBLE_HZ = 3;
+
+/** Delay from impact to the start of the 'left-surface' flight, s. */
+const FLIGHT_AFTER_S = 0.4;
+
 export type SynthFailure =
   | 'none'
   | 'tilt'
@@ -50,6 +56,11 @@ export interface SynthOptions {
   /** Phone orientation, degrees about x, y, z. Leaves |a| unchanged. */
   rotation?: [number, number, number];
   failure?: SynthFailure;
+  /**
+   * Strength of `failure`. 'tilt': extra degrees of lean, default 10 (negative leans less).
+   * 'left-surface': length of the 0 g flight 0.4 s after impact, s, default 0.2.
+   * 'moving-hover': amplitude of a 3 Hz wobble of |a| during the hover, m/s², default 1.
+   */
   failureSize?: number;
   seed?: number;
 }
@@ -82,7 +93,10 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   const durationS = opts.durationS ?? DEFAULTS.durationS;
   const noise = opts.noise ?? DEFAULTS.noise;
   const rotation = opts.rotation ?? [0, 0, 0];
-  const up = upAxis(routine, opts.leanDeg ?? DEFAULTS.leanDeg);
+  const failure = opts.failure ?? 'none';
+  const tilt = failure === 'tilt' ? (opts.failureSize ?? 10) : 0;
+  const wobble = failure === 'moving-hover' ? (opts.failureSize ?? 1) : 0;
+  const up = upAxis(routine, (opts.leanDeg ?? DEFAULTS.leanDeg) + tilt);
   const impactSpeed = opts.impactSpeed ?? DEFAULTS.impactSpeed;
   const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
@@ -100,16 +114,19 @@ export function synthRep(opts: SynthOptions = {}): Trace {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
   if (bounceRatio < 0 || bounceRatio >= 1) throw new RangeError('bounceRatio must be in [0, 1)');
-  // shortcut: only failure 'none' exists; add each mode with its reject test in #8 and #11.
-  if (opts.failure !== undefined && opts.failure !== 'none') {
-    throw new Error(`failure '${opts.failure}' is not implemented yet`);
+  // shortcut: caught-landing is not built; add it with its reject test in #11.
+  if (failure !== 'none' && failure !== 'tilt' && failure !== 'moving-hover' && failure !== 'no-drop' && failure !== 'left-surface') {
+    throw new Error(`failure '${failure}' is not implemented yet`);
   }
   assertSurfaceStaysInContact(impactSpeed, bounceHz, bounceRatio);
   const impactT = hoverS + dropS;
   /** |a| in m/s² at signal time t. A surface can push but not pull, so it never goes below 0. */
   const total = (t: number) => {
-    if (t < hoverS) return GRAVITY;
+    if (failure === 'no-drop') return GRAVITY;
+    if (t < hoverS) return GRAVITY + wobble * Math.sin(2 * Math.PI * WOBBLE_HZ * t);
     if (t < impactT) return GRAVITY - impactSpeed / dropS;
+    const flightStart = impactT + FLIGHT_AFTER_S;
+    if (failure === 'left-surface' && t >= flightStart && t < flightStart + (opts.failureSize ?? 0.2)) return 0;
     return Math.max(0, GRAVITY + excessAcceleration(t - impactT, impactSpeed, bounceHz, bounceRatio));
   };
   const rng = createRng(opts.seed ?? DEFAULTS.seed);
