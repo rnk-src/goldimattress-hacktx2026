@@ -68,12 +68,48 @@ describe('profile screen', () => {
     expect(await store.listPeople()).toEqual([]);
   });
 
-  it.each(['abc', '-5', '0'])('refuses the body weight %j and saves nothing', async (weight) => {
+  it.each(['abc', '-5', '0', '0x50', '1e2', '12abc', '501', 'Infinity'])('refuses the body weight %j and saves nothing', async (weight) => {
     const store = createLocalStore(memoryStorage());
     await mountProfileScreen(root, { store, newId: ids() });
     submit('Ana', weight);
     await vi.waitFor(() => expect(alertText()).toMatch(/weight/i));
     expect(await store.listPeople()).toEqual([]);
+  });
+
+  it('saves one profile when the form is submitted twice quickly', async () => {
+    const store = createLocalStore(memoryStorage());
+    await mountProfileScreen(root, { store, newId: ids() });
+    submit('Ana');
+    submit('Ana');
+    await vi.waitFor(() => expect(listed()).toEqual(['Ana']));
+    expect(await store.listPeople()).toHaveLength(1);
+  });
+
+  it('disables the button while saving and enables it again after', async () => {
+    const store = createLocalStore(memoryStorage());
+    await mountProfileScreen(root, { store, newId: ids() });
+    const button = root.querySelector('button')!;
+    submit('Ana');
+    expect(button.disabled).toBe(true);
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it('says it could not save when the store fails for another reason', async () => {
+    const broken: Store = {
+      ...createLocalStore(memoryStorage()),
+      savePerson: () => Promise.reject(new Error('blocked')),
+    };
+    await mountProfileScreen(root, { store: broken, newId: ids() });
+    submit('Ana');
+    await vi.waitFor(() => expect(alertText()).toMatch(/could not save/i));
+    expect(root.querySelector('button')!.disabled).toBe(false);
+  });
+
+  it.each([['62,5', 62.5], ['70', 70], ['500', 500]])('reads the body weight %j as %s kg', async (text, kg) => {
+    const store = createLocalStore(memoryStorage());
+    await mountProfileScreen(root, { store, newId: ids() });
+    submit('Ana', text);
+    await vi.waitFor(async () => expect((await store.listPeople())[0]).toMatchObject({ bodyMassKg: kg }));
   });
 
   it('tells the user when the phone storage is full', async () => {

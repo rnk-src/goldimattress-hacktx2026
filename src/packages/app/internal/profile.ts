@@ -7,6 +7,15 @@ export interface ProfileDeps {
   newId: () => string;
 }
 
+const MAX_BODY_KG = 500;
+
+/** Plain digits with an optional . or , decimal. Returns kg, or null when it is not a usable weight. */
+function parseBodyKg(text: string): number | null {
+  if (!/^\d+([.,]\d+)?$/.test(text)) return null;
+  const kg = Number(text.replace(',', '.'));
+  return kg > 0 && kg <= MAX_BODY_KG ? kg : null;
+}
+
 const describePerson = (p: Person) =>
   p.bodyMassKg === undefined ? p.name : `${p.name} (${p.bodyMassKg} kg)`;
 
@@ -26,7 +35,8 @@ export async function mountProfileScreen(
   const form = root.querySelector('form')!;
   const nameInput = form.querySelector<HTMLInputElement>('input[name=name]')!;
   const weightInput = form.querySelector<HTMLInputElement>('input[name=weight]')!;
-  const alert = form.querySelector('[role=alert]')!;
+  const button = form.querySelector('button')!;
+  const message = form.querySelector('[role=alert]')!;
   const list = root.querySelector('ul')!;
 
   const renderList = async () => {
@@ -41,17 +51,19 @@ export async function mountProfileScreen(
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (button.disabled) return;
     const name = nameInput.value.trim();
     if (!name) {
-      alert.textContent = 'Enter a name.';
+      message.textContent = 'Enter a name.';
       return;
     }
     const weightText = weightInput.value.trim();
-    const bodyMassKg = weightText === '' ? undefined : Number(weightText);
-    if (bodyMassKg !== undefined && !(Number.isFinite(bodyMassKg) && bodyMassKg > 0)) {
-      alert.textContent = 'Enter a body weight in kg above 0, or leave it blank.';
+    const bodyMassKg = weightText === '' ? undefined : parseBodyKg(weightText);
+    if (bodyMassKg === null) {
+      message.textContent = `Enter a body weight in kg, up to ${MAX_BODY_KG}, or leave it blank.`;
       return;
     }
+    button.disabled = true;
     try {
       await store.savePerson({
         id: newId(),
@@ -59,14 +71,17 @@ export async function mountProfileScreen(
         ...(bodyMassKg !== undefined && { bodyMassKg }),
         references: {},
       });
+      message.textContent = '';
+      form.reset();
+      await renderList();
     } catch (e) {
-      if (!(e instanceof StoreFullError)) throw e;
-      alert.textContent = 'Phone storage is full. Free some space and try again.';
-      return;
+      message.textContent =
+        e instanceof StoreFullError
+          ? 'Phone storage is full. Free some space and try again.'
+          : 'Could not save the profile. Try again.';
+    } finally {
+      button.disabled = false;
     }
-    alert.textContent = '';
-    form.reset();
-    await renderList();
   });
 
   await renderList();
