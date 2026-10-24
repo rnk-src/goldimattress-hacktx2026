@@ -28,7 +28,8 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
 /**
  * Turns whatever is in storage into the current schema. Missing, corrupt or unrecognised data
  * reads as empty, and the next save replaces it.
- * shortcut: a version newer than this build also reads as empty, so a downgrade would drop it.
+ * shortcut: corrupt data and a version newer than this build both read as empty and are overwritten
+ * by the next save, with no backup. Keep the raw value under a second key if that ever bites.
  */
 export function readStored(raw: string | null): StoredData {
   if (raw === null) return emptyStored();
