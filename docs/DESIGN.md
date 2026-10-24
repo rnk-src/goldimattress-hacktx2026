@@ -46,3 +46,13 @@ Caveats:
 - A future `SerialSource` (ESP32 + MPU6050) plugs in without changing feature extraction or the UI.
 - Pipeline: source → drop segmentation (free-fall window, impact) → features → compare to reference → verdict.
 - Language: Python.
+
+## Design decisions
+| Decision | Choice | Reason |
+|---|---|---|
+| Output | % match to the reference, plus per-feature direction ("firmer, less bouncy") | Comparing to a reference avoids calibrating an absolute scale. |
+| Measurement | Free drop from a fixed height | The drop height fixes the input energy. A hand press adds human variation. |
+| Springiness | Bounce and damping while the load stays on the surface | Hardness alone cannot tell foam from springs. |
+| Sensor | phyphox now, behind `SensorSource` | A microcontroller IMU can replace it later. |
+| Calibration | 5 reference drops; store each feature's mean and spread | The spread separates real differences from noise. |
+| Demo surfaces | Cushions, pads and pillows brought to the demo | Does not depend on a bed at the venue. |
