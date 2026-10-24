@@ -1,1 +1,1 @@
-export {};
+export { compare } from './internal/verdict';
