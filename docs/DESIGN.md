@@ -33,24 +33,40 @@ Caveats:
 - A seated human body resonates vertically at ~4–6 Hz, and its tissue adds damping. The body-on-surface bounce is ~1–3 Hz.
   Body effects cancel when the same person calibrates and tests, so results are relative only. Never report an absolute k.
 
-## Sensor and architecture
-### phyphox (current source)
-- Free, open-source app from RWTH Aachen. The iPhone IMU runs at about 100 Hz.
-- Experiment: "Acceleration with g" (raw, so free fall reads ~0).
-- Remote access: enable it in the app. It shows a URL like `http://<phone-ip>:8080`.
-  - Control: `/control?cmd=start`, `/control?cmd=stop`, `/control?cmd=clear`.
-  - Data: `/get?accX=full&accY=full&accZ=full&acc_time=full` returns JSON.
-- Pattern: clear → start → drop → wait ~2 s → stop → fetch the full buffer. Live polling misses the impact.
-- Network: venue Wi-Fi may block device-to-device traffic. Test it first. Fall back to a phone hotspot.
-- Keep phyphox in the foreground. Turn off auto-lock.
-- At 100 Hz a short impact spike can fall between samples. Prefer frequency, damping and settle time over a single peak value.
+## Architecture
+### Platform
+- Web app (PWA) in vanilla **TypeScript + Vite**. No UI framework.
+- All analysis runs **on the phone**. There is no backend in the core app.
+- Users reach it through **GitHub Pages** (HTTPS), deployed by a GitHub Action on every push to `main`.
+- Fallback if the browser sample rate is too low: Expo (`expo-sensors`, ~100 Hz). The signal core ports unchanged.
+
+### Sensor: `DeviceMotionEvent`
+- Read `accelerationIncludingGravity` (raw, gravity included).
+- iOS: call `DeviceMotionEvent.requestPermission()` from a user tap, over HTTPS. Otherwise no events arrive.
+- Android: `requestPermission` is undefined. Feature-detect and listen directly.
+- The iOS sample rate is unverified (~60 Hz expected). Log `event.interval` on a real device before building analysis.
+- Coaching: Web Audio beeps and `speechSynthesis`. `navigator.wakeLock` keeps the screen on. iOS has no `navigator.vibrate`.
+- At ~60 Hz a short spike can fall between samples. Prefer frequency, damping and settle time over a single peak value.
 
 ### Code structure
-- A `SensorSource` interface returns arrays of `(t, ax, ay, az)`.
-- `PhyphoxSource` is the first implementation.
-- A future `SerialSource` (ESP32 + MPU6050) plugs in without changing feature extraction or the UI.
-- Pipeline: source → drop segmentation (free-fall window, impact) → features → compare to reference → verdict.
-- Language: Python.
+- The **signal core** is plain TS with no DOM or framework imports. It is unit-testable and portable.
+- `SensorSource` returns arrays of `(t, ax, ay, az)`.
+  - `DeviceMotionSource` is the first implementation.
+  - A future Bluetooth IMU puck (ESP32 + IMU) needs a native or Expo shell, because iOS Safari has no Web Bluetooth.
+- `Store` persists people, references and tests.
+  - `LocalStore` (`localStorage`) is the first implementation. `CloudStore` is the stretch goal.
+- Pipeline per rep: hover detect → stillness + angle check → impact segmentation → impact speed → features → accept or reject.
+- Per test: 5 accepted reps → feature means → compare to reference → verdict.
+- The sensing half hands the app half one agreed result type (features + verdict + rejected reps). Fix it before building either side.
+
+### Data recorded per test
+- **Person**: anonymous ID, body weight, one reference per routine.
+- **Surface**: ID, name, type (mattress, couch, cushion, pad).
+- **Test**: person ID, surface ID, routine, timestamp, device model, sample rate, per-rep features, rejected reps with reasons.
+- **Raw acceleration per rep** (~3 s, a few kB). Keep it, so improved feature code can recompute old tests.
+
+### Prototyping tool
+- phyphox (free, RWTH Aachen) can log the iPhone IMU at ~100 Hz for quick offline comparisons. It is not part of the product.
 
 ## Design decisions
 | Decision | Choice | Reason |
