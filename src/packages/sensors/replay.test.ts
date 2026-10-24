@@ -66,6 +66,14 @@ describe('createReplaySource', () => {
     expect(second).toEqual([0, 1, 2, 3]);
   });
 
+  it('works when start and stop are called detached from the source', () => {
+    const { start, stop } = createReplaySource(traceOf(3));
+    const seen: number[] = [];
+    expect(() => start((s) => seen.push(s.ax))).not.toThrow();
+    expect(seen).toEqual([0, 1, 2]);
+    expect(() => stop()).not.toThrow();
+  });
+
   it('with realtime, stop() ends the replay', () => {
     vi.useFakeTimers();
     const seen: number[] = [];
