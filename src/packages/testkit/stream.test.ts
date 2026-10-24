@@ -31,4 +31,11 @@ describe('synthStream', () => {
     expect(synthStream([])).toEqual([]);
     expect(synthStream([{}, {}])).toHaveLength(2 * 210 + 20 * 60);
   });
+
+  it('keeps a tilted rep pose through its rest, so the gravity direction does not jump', () => {
+    const stream = synthStream([{ failure: 'tilt', failureSize: 10, leanDeg: 15, noise: 0 }, {}], 2);
+    const lean = (s: Sample) => (Math.acos(s.ay / mag(s)) * 180) / Math.PI;
+    expect(lean(stream[209]!)).toBeCloseTo(25, 4);
+    expect(lean(stream[210]!)).toBeCloseTo(25, 4);
+  });
 });

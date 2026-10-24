@@ -2,28 +2,34 @@ import type { RepFeatures, Sample } from '../../domain';
 import { findPeaks, magnitude, smooth3 } from './math';
 
 const G = 9.81;
-/** A bounce peak below this is noise, m/s² (4 σ of a 0.05 m/s² noise floor, smoothed). */
 /** Rest band around 1 g, m/s² (0.05 g). */
 const SETTLE_BAND = 0.05 * G;
+/** A bounce peak below this is noise, m/s² (4 σ of a 0.05 m/s² noise floor, smoothed). */
 const MIN_BOUNCE_PEAK = 0.12;
 
 /**
  * The four rep features from the samples at and after the impact (`impact` indexes `samples`, and
  * is at least 1). Everything is the excess of |a| over 1 g, and times count from the impact, which
  * falls midway between the last descent sample and the first impact sample.
- * `peakOverV` is the first lobe's peak over the impact speed.
+ * `peakOverV` is the first lobe's peak over the impact speed. Null when there is no positive first lobe.
  */
-export function repFeatures(samples: readonly Sample[], impact: number, impactSpeed: number): RepFeatures {
+export function repFeatures(
+  samples: readonly Sample[],
+  impact: number,
+  impactSpeed: number,
+): RepFeatures | null {
   const impactT = (samples[impact - 1]!.t + samples[impact]!.t) / 2;
   const t = samples.slice(impact).map((s) => s.t);
   const excess = samples.slice(impact).map((s) => magnitude(s) - G);
 
   const firstLobeEnd = excess.findIndex((e) => e <= 0);
+  // No positive first lobe: the impact sample is already at or below 1 g, so the features are undefined.
+  if (firstLobeEnd === 0) return null;
   const peak = Math.max(...excess.slice(0, firstLobeEnd < 0 ? undefined : firstLobeEnd));
   // Linear crossing of 1 g between the last positive and the first non-positive sample.
   const crossing =
-    firstLobeEnd < 1
-      ? t[Math.max(firstLobeEnd, 0)]!
+    firstLobeEnd < 0
+      ? t[t.length - 1]!
       : t[firstLobeEnd - 1]! +
         ((t[firstLobeEnd]! - t[firstLobeEnd - 1]!) * excess[firstLobeEnd - 1]!) /
           (excess[firstLobeEnd - 1]! - excess[firstLobeEnd]!);

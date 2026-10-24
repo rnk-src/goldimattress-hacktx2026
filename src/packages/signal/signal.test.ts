@@ -248,3 +248,74 @@ describe('analyzeRep rep checks', () => {
     expect(analyzeRep(synthRep({ impactSpeed: 1.2, bounceHz: 1.5 })).ok).toBe(true);
   });
 });
+
+describe('analyzeRep on bad data', () => {
+  const rejected = (trace: Parameters<typeof analyzeRep>[0]) => {
+    const result = analyzeRep(trace);
+    expect(result.ok).toBe(false);
+    return result;
+  };
+  const base = synthRep({ noise: 0 });
+
+  it.each([
+    ['an empty trace', { ...base, samples: [] }],
+    ['a one-sample trace', { ...base, samples: base.samples.slice(0, 1) }],
+    ['a trace of zeros', { ...base, samples: base.samples.map((s) => ({ ...s, ax: 0, ay: 0, az: 0 })) }],
+    [
+      'a spike with no descent',
+      {
+        ...base,
+        samples: base.samples.map((s, i) => (i === 40 ? { ...s, ay: 30 } : { ...s, ay: 9.81, az: 0 })),
+      },
+    ],
+    ['a spike at the first sample', { ...base, samples: base.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) }],
+  ])('rejects %s without throwing', (_name, trace) => {
+    expect(() => rejected(trace)).not.toThrow();
+  });
+
+  it('assessHover gives a finite lean and not-still for an empty or zero window', () => {
+    const zero = base.samples.slice(0, 20).map((s) => ({ ...s, ax: 0, ay: 0, az: 0 }));
+    for (const window of [[], zero]) {
+      const result = assessHover(window, 'sit-drop');
+      expect(Number.isFinite(result.leanDeg)).toBe(true);
+      expect(result.reasons).toEqual(['not-still']);
+    }
+  });
+
+  it('rejects an impact sample at or below 1 g, which leaves no first lobe', () => {
+    const samples = base.samples.map((s, i) => {
+      if (i !== 78) return s;
+      const k = (9.81 - 0.2) / Math.hypot(s.ax, s.ay, s.az);
+      return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
+    });
+    const result = rejected({ ...base, samples });
+    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
+  });
+
+  it('never accepts a rep with a non-finite number in it', () => {
+    for (let i = 0; i < base.samples.length; i += 7) {
+      const samples = base.samples.map((s, j) => (j === i ? { ...s, ay: NaN } : s));
+      const result = analyzeRep({ ...base, samples });
+      if (!result.ok) continue;
+      const numbers = [...Object.values(result.features), result.impactSpeed, result.leanDeg];
+      expect(numbers.every(Number.isFinite)).toBe(true);
+    }
+  });
+});
+
+describe('analyzeRep sample gaps', () => {
+  const trace = synthRep({ durationS: 4 });
+  const without = (from: number, to: number) => ({
+    ...trace,
+    samples: trace.samples.filter((s) => s.t <= from || s.t >= to),
+  });
+
+  it('rejects a 0.2 s gap around the impact as low-sample-rate', () => {
+    const result = analyzeRep(without(1.2, 1.4));
+    expect(result.ok === false && result.reasons).toEqual(['low-sample-rate']);
+  });
+
+  it('accepts a gap that starts more than 1 s after the impact', () => {
+    expect(analyzeRep(without(3.0, 3.3)).ok).toBe(true);
+  });
+});
