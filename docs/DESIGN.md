@@ -12,15 +12,17 @@
 - The sensor is the phone's accelerometer. The load is the user's own body.
 
 ## Measurement physics
-Model the surface as a mass-spring-damper. A known mass m falls from height h.
+Model the surface as a mass-spring-damper. A mass m falls from height h. With the body as the load, m is the user's effective body mass.
 - **Impact speed**: v = √(2gh). The same height gives the same momentum, so drops are comparable.
 - **Hardness (impulse)**: F·Δt = Δp. A firm surface gives a tall, narrow spike; a soft one gives a low, wide hump.
   Features: peak |a| and stopping time.
 - **Stiffness (SHM)**: the mass bobs with period T = 2π√(m/k), so k = 4π²m/T².
 - **Springiness (damping)**: amplitude ratio of consecutive bounce peaks, A₂/A₁. Near 1 = springy; near 0 = dead (memory foam).
-- **Free-fall trigger**: in "Acceleration with g" mode, |a| ≈ 0 during free fall, then jumps at impact.
-  - Fall time gives h = ½gt² and v = g·t.
-- **Height normalization**: for a linear spring, a_peak / v ≈ √(k/m), independent of drop height.
+- **Body drops are not free fall**: the legs still carry some weight while they give way, so |a| does not reach ~0.
+  - Start: detect the still hover (low jitter, |a| ≈ 1 g). This is the zero-velocity point.
+  - Impact speed: integrate (|a| − g) from the end of the hover to impact (~0.3 s window).
+  - A dropped object does reach ~0 g; then fall time gives h = ½gt² and v = g·t.
+- **Speed normalization**: for a linear spring, a_peak / v ≈ √(k/m), independent of drop height.
 - **Orientation**: use |a| = √(ax²+ay²+az²). It does not depend on how the phone faces.
 
 Caveats:
@@ -28,6 +30,8 @@ Caveats:
 - A drop that is too high makes the mass leave the surface again (a second ~0 g window). Detect this.
 - Slow memory-foam recovery after the load is removed is out of scope.
 - Hardness and damping are separate axes. Firm foam and a soft innerspring can share hardness but differ in damping. Report both.
+- A seated human body resonates vertically at ~4–6 Hz, and its tissue adds damping. The body-on-surface bounce is ~1–3 Hz.
+  Body effects cancel when the same person calibrates and tests, so results are relative only. Never report an absolute k.
 
 ## Sensor and architecture
 ### phyphox (current source)
