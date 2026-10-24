@@ -6,6 +6,8 @@ const domPackages = ['sensors', 'store', 'coach', 'app'];
 export default defineConfig({
   test: {
     passWithNoTests: true,
+    // Boundary tests spawn depcruise and load the ESLint config; allow for cold CI runners.
+    testTimeout: 30_000,
     projects: [
       {
         test: {

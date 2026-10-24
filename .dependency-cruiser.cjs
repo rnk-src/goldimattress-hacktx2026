@@ -11,15 +11,26 @@ const allowed = {
   domain: [],
 };
 
-const importRules = Object.entries(allowed).map(([pkg, may]) => ({
-  name: `${pkg}-imports`,
-  severity: 'error',
-  from: { path: `^src/packages/${pkg}/` },
-  to: {
-    path: '^src/packages/',
-    pathNot: [pkg, ...may].map((p) => `^src/packages/${p}/`),
+const isTest = '\\.test\\.ts$';
+
+// Test files may also use testkit; production files may not.
+const importRules = Object.entries(allowed).flatMap(([pkg, may]) => [
+  {
+    name: `${pkg}-imports`,
+    severity: 'error',
+    from: { path: `^src/packages/${pkg}/`, pathNot: isTest },
+    to: { path: '^src/packages/', pathNot: [pkg, ...may].map((p) => `^src/packages/${p}/`) },
   },
-}));
+  {
+    name: `${pkg}-test-imports`,
+    severity: 'error',
+    from: { path: `^src/packages/${pkg}/.*${isTest}` },
+    to: {
+      path: '^src/packages/',
+      pathNot: [pkg, ...may, 'testkit'].map((p) => `^src/packages/${p}/`),
+    },
+  },
+]);
 
 const indexOnly = '^src/packages/[^/]+/index\\.ts$';
 
@@ -33,9 +44,10 @@ module.exports = {
       to: { path: '^src/packages/', pathNot: ['^src/packages/$1/', indexOnly] },
     },
     {
-      name: 'main-index-only',
+      // Same rule for files outside every package, such as src/main.ts.
+      name: 'index-only',
       severity: 'error',
-      from: { path: '^src/main\\.ts$' },
+      from: { path: '^src/', pathNot: '^src/packages/' },
       to: { path: '^src/packages/', pathNot: indexOnly },
     },
     {
