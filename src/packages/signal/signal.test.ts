@@ -225,3 +225,26 @@ describe('analyzeRep features against the analytic answers', () => {
     }
   });
 });
+
+describe('analyzeRep rep checks', () => {
+  it('rejects a smeared, slow impact as caught-landing', () => {
+    const result = analyzeRep(synthRep({ failure: 'caught-landing' }));
+    expect(result.ok === false && result.reasons).toEqual(['caught-landing']);
+  });
+
+  it.each([
+    [0.75, 'too-fast'],
+    [0.45, 'too-slow'],
+  ] as const)('rejects an impact speed of %s m/s against a 0.6 m/s reference as %s', (impactSpeed, reason) => {
+    const result = analyzeRep(synthRep({ impactSpeed }), refWithLean('sit-drop', 15));
+    expect(result.ok === false && result.reasons).toEqual([reason]);
+  });
+
+  it.each([0.5, 0.66, 0.7])('accepts an impact speed of %s m/s against a 0.6 m/s reference', (impactSpeed) => {
+    expect(analyzeRep(synthRep({ impactSpeed }), refWithLean('sit-drop', 15)).ok).toBe(true);
+  });
+
+  it('does not check the impact speed without a reference', () => {
+    expect(analyzeRep(synthRep({ impactSpeed: 1.2, bounceHz: 1.5 })).ok).toBe(true);
+  });
+});

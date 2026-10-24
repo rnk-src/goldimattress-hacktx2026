@@ -58,6 +58,7 @@ export interface SynthOptions {
   failure?: SynthFailure;
   /**
    * Strength of `failure`. 'tilt': extra degrees of lean, default 10 (negative leans less).
+   * 'caught-landing': frequency of the smeared hump, Hz, default 0.4 (stops after 1/(π·f) s).
    * 'left-surface': length of the 0 g flight 0.4 s after impact, s, default 0.2.
    * 'moving-hover': amplitude of a 3 Hz wobble of |a| during the hover, m/s², default 1.
    */
@@ -114,11 +115,11 @@ export function synthRep(opts: SynthOptions = {}): Trace {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
   if (bounceRatio < 0 || bounceRatio >= 1) throw new RangeError('bounceRatio must be in [0, 1)');
-  // shortcut: caught-landing is not built; add it with its reject test in #11.
-  if (failure !== 'none' && failure !== 'tilt' && failure !== 'moving-hover' && failure !== 'no-drop' && failure !== 'left-surface') {
-    throw new Error(`failure '${failure}' is not implemented yet`);
-  }
-  assertSurfaceStaysInContact(impactSpeed, bounceHz, bounceRatio);
+  // Tensed legs smear the hit into one slow hump: critically damped at a low frequency.
+  const caught = failure === 'caught-landing';
+  const surfaceHz = caught ? (opts.failureSize ?? 0.4) : bounceHz;
+  const surfaceRatio = caught ? 0 : bounceRatio;
+  assertSurfaceStaysInContact(impactSpeed, surfaceHz, surfaceRatio);
   const impactT = hoverS + dropS;
   /** |a| in m/s² at signal time t. A surface can push but not pull, so it never goes below 0. */
   const total = (t: number) => {
@@ -127,7 +128,7 @@ export function synthRep(opts: SynthOptions = {}): Trace {
     if (t < impactT) return GRAVITY - impactSpeed / dropS;
     const flightStart = impactT + FLIGHT_AFTER_S;
     if (failure === 'left-surface' && t >= flightStart && t < flightStart + (opts.failureSize ?? 0.2)) return 0;
-    return Math.max(0, GRAVITY + excessAcceleration(t - impactT, impactSpeed, bounceHz, bounceRatio));
+    return Math.max(0, GRAVITY + excessAcceleration(t - impactT, impactSpeed, surfaceHz, surfaceRatio));
   };
   const rng = createRng(opts.seed ?? DEFAULTS.seed);
 

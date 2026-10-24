@@ -13,6 +13,12 @@ const DESCENT_DEFICIT = 0.5;
 const EPS = 1e-6;
 /** Below this rate the impact is too coarse to measure, Hz. */
 const MIN_RATE_HZ = 40;
+/**
+ * A first lobe longer than this means tensed legs smeared the impact, s. The slowest real surface in
+ * the synthetic grid (1 Hz bounce) stops after 0.49 s.
+ * shortcut: absolute limit, a soft foam may be flagged; compare with the reference stopTime when real fixtures exist.
+ */
+const CAUGHT_STOP_S = 0.6;
 /** |a| below this long enough after the impact means the mass left the surface, m/s². */
 const FLIGHT_ACCEL = 2;
 /** shortcut: a trough near 0 g this long counts as flight, so a rep at the contact limit may be rejected; tune on fixtures. */
@@ -72,5 +78,13 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (reasons.length > 0) return reject(trace, reasons);
   const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
   const features = repFeatures(trace.samples, impact, impactSpeed);
+  if (features.stopTime > CAUGHT_STOP_S) reasons.push('caught-landing');
+  if (ref) {
+    const ratio = impactSpeed / ref.impactSpeed.mean;
+    const tol = routineSpec(trace.routine).speedTol;
+    if (ratio > 1 + tol) reasons.push('too-fast');
+    else if (ratio < 1 - tol) reasons.push('too-slow');
+  }
+  if (reasons.length > 0) return reject(trace, reasons);
   return { ok: true, features, impactSpeed, leanDeg: assessment.leanDeg, trace };
 }
