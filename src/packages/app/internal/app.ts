@@ -1,16 +1,13 @@
 import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
-import type { SensorSource } from '../../sensors';
-import type { Store } from '../../store';
+import type { Access, SensorSource } from '../../sensors';
 
 export interface AppDeps {
   source: SensorSource;
-  store: Store;
   makeCoach: () => Coach;
   now: () => Date;
   device: string;
-  newId: () => string;
 }
 
 const brandHeader = `
@@ -62,7 +59,15 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
     button.setAttribute('aria-busy', 'true');
     if (status) status.textContent = 'Requesting motion access…';
     getCoach();
-    const access = await deps.source.requestAccess();
+    let access: Access;
+    try {
+      access = await deps.source.requestAccess();
+    } catch {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      if (status) status.textContent = 'Could not request motion access. Reload this page and tap the button again.';
+      return;
+    }
     if (access === 'granted') {
       window.location.hash = '#/capture';
       window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -135,6 +140,7 @@ function captureView(
   const sound = root.querySelector<HTMLButtonElement>('[data-action="toggle-sound"]');
   let muted = false;
   let running = false;
+  let exportUrl: string | undefined;
   sound?.addEventListener('click', () => {
     muted = !muted;
     getCoach().setMuted(muted);
@@ -145,13 +151,17 @@ function captureView(
     const traces: Trace[] = [];
     let activeSamples: Sample[] | undefined;
     let startedAt = '';
+    let received = 0;
+    let aborted = false;
     try {
       deps.source.start((sample) => {
+        received += 1;
         activeSamples?.push(sample);
         const rate = deps.source.sampleRateHz;
         if (rate !== null) {
           if (sampleRate) sampleRate.textContent = `${rate.toFixed(1)} Hz`;
-          if (eventInterval) eventInterval.textContent = `${(1_000 / rate).toFixed(1)} ms`;
+          const interval = deps.source.eventIntervalMs ?? 1_000 / rate;
+          if (eventInterval) eventInterval.textContent = `${interval.toFixed(1)} ms`;
         }
       });
     } catch {
@@ -165,6 +175,20 @@ function captureView(
     const coach = getCoach();
     void coach.keepAwake(true);
     let repetition = 0;
+
+    later(() => {
+      if (received > 0) return;
+      aborted = true;
+      running = false;
+      deps.source.stop();
+      void coach.keepAwake(false);
+      progress.forEach((item) => {
+        item.dataset.state = 'pending';
+        item.removeAttribute('aria-current');
+      });
+      if (status) status.textContent = 'No motion events arrived. Use a phone with motion sensors and try again.';
+      button.disabled = false;
+    }, 2_000);
 
     const record = () => {
       repetition += 1;
@@ -180,6 +204,7 @@ function captureView(
       if (status) status.textContent = readyText;
       coach.play({ key: 'drop-when-ready', text: readyText, beep: 'ready' });
       later(() => {
+        if (aborted) return;
         const samples = activeSamples;
         activeSamples = undefined;
         const first = samples?.[0];
@@ -197,6 +222,7 @@ function captureView(
         if (status) status.textContent = capturedText;
         coach.play({ key: 'captured', text: capturedText, beep: 'captured' });
         later(() => {
+          if (aborted) return;
           if (repetition < 5) record();
           else {
             deps.source.stop();
@@ -207,18 +233,28 @@ function captureView(
                 item.dataset.state = 'complete';
                 item.removeAttribute('aria-current');
               });
+            }
+            if (traces.length > 0) {
               const recording: Recording = {
                 version: 1,
                 label: label?.value.trim() || 'Raw capture',
                 surface: surface?.value.trim() || 'Unnamed surface',
                 traces,
               };
-              const href = `data:application/json;charset=utf-8,${encodeURIComponent(serializeRecording(recording))}`;
+              if (exportUrl) URL.revokeObjectURL(exportUrl);
+              exportUrl = URL.createObjectURL(
+                new Blob([serializeRecording(recording)], { type: 'application/json' }),
+              );
               if (exportSlot) {
                 exportSlot.innerHTML = `<a class="button button--export" data-action="export-recording" download="goldimattress-recording.json">Export Recording JSON</a>`;
-                exportSlot.querySelector('a')?.setAttribute('href', href);
+                exportSlot.querySelector('a')?.setAttribute('href', exportUrl);
               }
-              if (status) status.textContent = 'Capture complete';
+              if (status) {
+                status.textContent =
+                  traces.length === 5
+                    ? 'Capture complete'
+                    : `Captured ${traces.length} of 5 repetitions. Some windows had no motion events; export what was recorded or try again.`;
+              }
             } else if (status) {
               status.textContent = 'Capture ended without enough motion events. Keep this page visible and try again.';
             }
@@ -231,6 +267,7 @@ function captureView(
   });
 
   return () => {
+    if (exportUrl) URL.revokeObjectURL(exportUrl);
     if (!running) return;
     running = false;
     deps.source.stop();
