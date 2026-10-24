@@ -2,13 +2,14 @@
 
 ## Overview
 - A hackathon project (HackTX 2026), inspired by Goldilocks and the three beds.
-- A user calibrates the device on a mattress or cushion they like (the reference).
-- They then test other surfaces. The device reports how close each one is to the reference.
+- A phone-only web app. Users need nothing but their phone: no laptop, no extra hardware.
+- A user calibrates on a mattress or cushion they like (the reference).
+- They then test other surfaces. The app reports whether each one is too hard, too soft or just right *for them*.
+- Scope: mattresses first (the costliest wrong purchase), plus couches, chairs and cushions.
 - It measures two properties:
   - **Hardness**: how the surface resists a load (the downward phase, including bottoming out).
   - **Springiness**: how the surface bounces back while the load is still on it.
-- The sensor is a smartphone accelerometer, read through the phyphox app.
-- There is no check command yet.
+- The sensor is the phone's accelerometer. The load is the user's own body.
 
 ## Measurement physics
 Model the surface as a mass-spring-damper. A known mass m falls from height h.
