@@ -64,12 +64,20 @@ function parseTrace(value: unknown, path: string): Trace {
   if (!routines.includes(routine as Routine)) {
     throw new RecordingFormatError(`${path}.routine`, `unknown routine '${routine}'`);
   }
+  const sampleRateHz = number(obj, 'sampleRateHz', path);
+  if (sampleRateHz <= 0) throw new RecordingFormatError(`${path}.sampleRateHz`, 'must be positive');
+  const samples = array(obj, 'samples', path).map((s, i) => parseSample(s, `${path}.samples[${i}]`));
+  samples.forEach((s, i) => {
+    if (i > 0 && s.t <= samples[i - 1]!.t) {
+      throw new RecordingFormatError(`${path}.samples[${i}].t`, 'times must strictly increase');
+    }
+  });
   return {
     routine: routine as Routine,
-    sampleRateHz: number(obj, 'sampleRateHz', path),
+    sampleRateHz,
     device: string(obj, 'device', path),
     startedAt: string(obj, 'startedAt', path),
-    samples: array(obj, 'samples', path).map((s, i) => parseSample(s, `${path}.samples[${i}]`)),
+    samples,
   };
 }
 

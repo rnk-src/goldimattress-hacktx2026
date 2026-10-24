@@ -54,6 +54,18 @@ describe('createReplaySource', () => {
     expect(seen).toEqual([0, 1, 2, 3]);
   });
 
+  it('a second start() replaces the callback and cancels the first run', () => {
+    vi.useFakeTimers();
+    const first: number[] = [];
+    const second: number[] = [];
+    const source = createReplaySource(traceOf(4, 10), { realtime: true });
+    source.start((s) => first.push(s.ax));
+    source.start((s) => second.push(s.ax));
+    vi.advanceTimersByTime(1000);
+    expect(first).toEqual([0]);
+    expect(second).toEqual([0, 1, 2, 3]);
+  });
+
   it('with realtime, stop() ends the replay', () => {
     vi.useFakeTimers();
     const seen: number[] = [];

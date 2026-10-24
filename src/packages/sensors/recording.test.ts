@@ -64,6 +64,22 @@ describe('recording format', () => {
     expect((catchError(() => parseRecording(bad)) as Error).message).toContain('version');
   });
 
+  it('rejects a non-positive sample rate', () => {
+    const bad = JSON.parse(serializeRecording(recording));
+    bad.traces[0].sampleRateHz = 0;
+    expect((catchError(() => parseRecording(bad)) as Error).message).toContain(
+      'traces[0].sampleRateHz',
+    );
+  });
+
+  it('rejects sample times that do not increase', () => {
+    const bad = JSON.parse(serializeRecording(recording));
+    bad.traces[0].samples[1].t = 0;
+    expect((catchError(() => parseRecording(bad)) as Error).message).toContain(
+      'traces[0].samples[1].t',
+    );
+  });
+
   it('rejects a value that is not an object', () => {
     expect(catchError(() => parseRecording(null))).toBeInstanceOf(RecordingFormatError);
   });

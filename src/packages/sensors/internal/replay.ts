@@ -23,6 +23,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
   return {
     requestAccess: () => Promise.resolve('granted'),
     start(onSample) {
+      this.stop();
       emitted = 0;
       const t0 = trace.samples[0]?.t ?? 0;
       for (const s of trace.samples) {

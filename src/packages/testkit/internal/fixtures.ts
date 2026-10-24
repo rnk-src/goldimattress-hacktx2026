@@ -8,8 +8,9 @@ export function loadFixture(name: string): Recording {
   let text: string;
   try {
     text = readFileSync(url, 'utf8');
-  } catch {
-    throw new Error(`Fixture '${name}' not found at src/packages/testkit/fixtures/${name}.json`);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    throw new Error(`Fixture '${name}' not found at src/packages/testkit/fixtures/${name}.json`, { cause: e });
   }
   return parseRecording(JSON.parse(text));
 }

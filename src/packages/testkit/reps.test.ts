@@ -60,4 +60,8 @@ describe('synthReps', () => {
     const spread = { impactSpeed: 5, bounceHz: 5, bounceRatio: 5, leanDeg: 90 };
     expect(() => synthReps(100, {}, spread)).not.toThrow();
   });
+
+  it('throws for an invalid nominal instead of capping it when there is no spread', () => {
+    expect(() => synthReps(2, { impactSpeed: 2.5, bounceHz: 5, bounceRatio: 0.9 })).toThrow(RangeError);
+  });
 });

@@ -76,3 +76,11 @@ describe('expectedFeatures', () => {
     expect(springy.settleTime).toBeGreaterThan(dead.settleTime);
   });
 });
+
+describe('expectedFeatures contact limit', () => {
+  it('rejects options synthRep cannot generate', () => {
+    expect(() => expectedFeatures({ impactSpeed: 2.5, bounceHz: 5, bounceRatio: 0.9 })).toThrow(
+      RangeError,
+    );
+  });
+});
