@@ -56,3 +56,41 @@ Caveats:
 | Sensor | phyphox now, behind `SensorSource` | A microcontroller IMU can replace it later. |
 | Calibration | 5 reference drops; store each feature's mean and spread | The spread separates real differences from noise. |
 | Demo surfaces | Cushions, pads and pillows brought to the demo | Does not depend on a bed at the venue. |
+
+## Load options
+Target contact pressure ≈ 1.2–1.4 kPa (an average lying body: ~70 kg over ~0.5 m²). P = mg/A.
+
+### Phone alone (~0.2 kg, ~0.18 kPa)
+Works for very different surfaces, extreme springiness and thin pads. It cannot gather:
+- **Bottoming out**: it never compresses a cushion to its limit.
+- **Deep support**: it reads only the top 1–2 cm. A pillow-top over a firm core reads soft (the opposite verdict).
+- **Mid-range damping**: the bounce is ~10 Hz and dies in 1–2 cycles, giving only ~10 samples per cycle.
+- **Meaningful k**: stiffness at a feather load does not describe a body load.
+- **Fine discrimination**: similar surfaces overlap within run-to-run noise.
+
+Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.05 g), rebound yes/no, whole-waveform correlation to the reference.
+
+### Weighted plate rig (~1.5 kg on a 5–6 in base, ~1.0 kPa)
+- Parts: one 2.5 lb standard weight plate (1 in hole, ~6.5 in × 0.8 in), small round cutting board, hard polycarbonate case, 3M VHB tape or 5-min epoxy.
+- Stack: board → plate → case → phone, screen up. The phone rides on top and never touches the surface.
+- Rules: no superglue (brittle, does not bond TPU), no water bottles or sandbags (slosh adds fake damping), no foam between phone and plate. Keep drops under 15 cm and tether the rig.
+- Drawback: a carried weight is not practical.
+- Product form: a 3 in × 1 in steel puck (~0.9 kg) with an ESP32 + IMU inside.
+
+### Textbook
+- A flat 8.5 × 11 in book needs ~8 kg (3–5 hardcovers) for body pressure. One 2 kg book gives ~0.36 kPa.
+- One book fixes the sampling problem but not bottoming out. A small base under it (a CD case) gives ~1.1 kPa but may tip.
+
+### Body sit-drop
+- Hold the phone flat against the chest, then drop into a sit on the surface. The body is the load, at real body pressure.
+- It recovers bottoming out and deep support. The bounce is ~1–3 Hz, which samples well.
+- It calibrates to the person: "just right for you".
+- Risk: people do not sit the same way twice. Mitigate with a fixed routine, impact-speed normalization, 5 reps and outlier rejection.
+- Consistency test: 5 sit-drops each on two surfaces. Keep the method if the within-surface spread is smaller than the between-surface gap. Otherwise fall back to the plate.
+- Limits: it tests the edge zone, and surfaces must hold a seated person.
+
+### Other options
+- Phone tilt beside the person: hardness only, and it depends on distance.
+- Ball drop (phyphox "(In)elastic collision" or 240 fps video): gives coefficient of restitution, but a light probe.
+- LiDAR depth: needs a custom iOS app.
+- Hand press: no force reading.
