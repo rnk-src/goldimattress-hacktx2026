@@ -3,6 +3,7 @@ import type { Coach } from '../coach';
 import type { Cue, Sample, Trace } from '../domain';
 import { createReplaySource, parseRecording } from '../sensors';
 import type { SensorSource } from '../sensors';
+import type { Store } from '../store';
 import { startApp } from './index';
 
 function coach(): Coach {
@@ -11,6 +12,17 @@ function coach(): Coach {
     async keepAwake() {},
     setMuted() {},
     dispose() {},
+  };
+}
+
+function store(): Store {
+  return {
+    listPeople: () => Promise.resolve([]),
+    savePerson: () => Promise.resolve(),
+    findSurfaces: () => Promise.resolve([]),
+    saveSurface: () => Promise.resolve(),
+    saveTest: () => Promise.resolve(),
+    listTests: () => Promise.resolve([]),
   };
 }
 
@@ -55,9 +67,11 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     const button = root.querySelector<HTMLButtonElement>('button[data-action="request-motion"]');
@@ -84,9 +98,11 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="request-motion"]')?.click();
@@ -111,9 +127,11 @@ describe('startApp', () => {
 
     startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="request-motion"]')?.click();
@@ -140,9 +158,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
+      newId: () => 'test-id',
     });
 
     const start = root.querySelector<HTMLButtonElement>('[data-action="start-capture"]');
@@ -186,9 +206,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
+      newId: () => 'test-id',
     });
 
     const label = root.querySelector<HTMLInputElement>('[name="label"]');
@@ -217,9 +239,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(5), { realtime: true }),
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
@@ -236,9 +260,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
+      newId: () => 'test-id',
     });
 
     const progress = root.querySelector('[data-repetition-progress]');
@@ -265,9 +291,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     const stop = startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
@@ -290,9 +318,11 @@ describe('startApp', () => {
     window.location.hash = '#/permission';
     startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     const button = root.querySelector<HTMLButtonElement>('[data-action="request-motion"]');
@@ -321,6 +351,7 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source,
+      store: store(),
       makeCoach: () => ({
         play() {},
         keepAwake: (on) => {
@@ -332,6 +363,7 @@ describe('startApp', () => {
       }),
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     const start = root.querySelector<HTMLButtonElement>('[data-action="start-capture"]');
@@ -367,9 +399,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source,
+      store: store(),
       makeCoach: coach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
@@ -409,9 +443,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source: createReplaySource(replayTrace()),
+      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'Replay phone',
+      newId: () => 'test-id',
     });
 
     const toggle = root.querySelector<HTMLButtonElement>('[data-action="toggle-sound"]');
@@ -448,9 +484,11 @@ describe('startApp', () => {
     window.location.hash = '#/capture';
     startApp(root, {
       source,
+      store: store(),
       makeCoach: () => fakeCoach,
       now: () => new Date('2026-10-24T16:00:00.000Z'),
       device: 'test phone',
+      newId: () => 'test-id',
     });
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();

@@ -2,12 +2,15 @@ import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
 import type { Access, SensorSource } from '../../sensors';
+import type { Store } from '../../store';
 
 export interface AppDeps {
   source: SensorSource;
+  store: Store;
   makeCoach: () => Coach;
   now: () => Date;
   device: string;
+  newId: () => string;
 }
 
 const brandHeader = `
