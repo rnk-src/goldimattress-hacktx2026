@@ -1,4 +1,5 @@
 import type { Trace } from '../../domain';
+import { maxContactSpeed } from './response';
 import { createRng } from './rng';
 import { DEFAULTS, GRAVITY, synthRep, type SynthOptions } from './synth';
 
@@ -36,6 +37,10 @@ export function synthReps(
       const drawn = (opts[key] ?? DEFAULTS[key]) + sigma * rng.gaussian();
       rep[key] = Math.min(hi, Math.max(lo, drawn));
     }
+    // Drawn values are valid alone; together they must still keep the surface pushing.
+    if (!Object.values(spread).some(Boolean)) return synthRep(rep);
+    const safeSpeed = 0.99 * maxContactSpeed(rep.bounceHz ?? DEFAULTS.bounceHz, rep.bounceRatio ?? DEFAULTS.bounceRatio);
+    rep.impactSpeed = Math.min(rep.impactSpeed ?? DEFAULTS.impactSpeed, safeSpeed);
     return synthRep(rep);
   });
 }

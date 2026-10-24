@@ -1,5 +1,5 @@
 import type { RepFeatures } from '../../domain';
-import { excessAcceleration } from './response';
+import { assertSurfaceStaysInContact, excessAcceleration } from './response';
 import { DEFAULTS, GRAVITY, type SynthOptions } from './synth';
 
 const SETTLE_BAND = 0.05 * GRAVITY;
@@ -23,6 +23,7 @@ export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
   const v = opts.impactSpeed ?? DEFAULTS.impactSpeed;
   const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
+  assertSurfaceStaysInContact(v, bounceHz, bounceRatio);
   const excess = (t: number) => excessAcceleration(t, v, bounceHz, bounceRatio);
   const overBand = (t: number) => Math.abs(excess(t)) - SETTLE_BAND;
   const omegaD = 2 * Math.PI * bounceHz;

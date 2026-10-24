@@ -130,3 +130,18 @@ describe('synthRep invalid options', () => {
     expect(() => synthRep({ failure: 'none' })).not.toThrow();
   });
 });
+
+describe('synthRep timing and contact limits', () => {
+  it.each([
+    ['dropS', { dropS: 0 }],
+    ['hoverS', { hoverS: -1 }],
+    ['durationS', { durationS: 0 }],
+    ['sampleRateHz', { sampleRateHz: 0 }],
+  ])('rejects a non-positive %s', (_name, opts) => {
+    expect(() => synthRep(opts)).toThrow(RangeError);
+  });
+
+  it('rejects options where the surface would have to pull below 0 g', () => {
+    expect(() => synthRep({ impactSpeed: 2.5, bounceHz: 5, bounceRatio: 0.9 })).toThrow(RangeError);
+  });
+});

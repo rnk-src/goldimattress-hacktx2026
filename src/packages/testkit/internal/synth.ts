@@ -1,8 +1,8 @@
 import type { Routine, Sample, Trace } from '../../domain';
-import { excessAcceleration } from './response';
+import { GRAVITY, assertSurfaceStaysInContact, excessAcceleration } from './response';
 import { createRng } from './rng';
 
-export const GRAVITY = 9.81;
+export { GRAVITY };
 
 /** What each `SynthOptions` field means when left out. */
 export const DEFAULTS = {
@@ -88,6 +88,14 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
   const hoverS = opts.hoverS ?? DEFAULTS.hoverS;
   const dropS = opts.dropS ?? DEFAULTS.dropS;
+  for (const [name, value] of [
+    ['dropS', dropS],
+    ['hoverS', hoverS],
+    ['durationS', durationS],
+    ['sampleRateHz', sampleRateHz],
+  ] as const) {
+    if (!(value > 0)) throw new RangeError(`${name} must be positive`);
+  }
   if (impactSpeed > GRAVITY * dropS) {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
@@ -95,6 +103,7 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   if (opts.failure !== undefined && opts.failure !== 'none') {
     throw new Error(`failure '${opts.failure}' is not implemented yet`);
   }
+  assertSurfaceStaysInContact(impactSpeed, bounceHz, bounceRatio);
   const impactT = hoverS + dropS;
   /** |a| in m/s² at signal time t. A surface can push but not pull, so it never goes below 0. */
   const total = (t: number) => {
