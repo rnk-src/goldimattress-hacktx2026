@@ -1,11 +1,6 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-.pytest_cache/
-.ruff_cache/
-
-# Data
+node_modules/
+dist/
+coverage/
 data/raw/
 
 # macOS / editors

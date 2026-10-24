@@ -1,0 +1,167 @@
+export type Routine = 'sit-drop' | 'bridge-drop';
+export type SurfaceType = 'mattress' | 'couch' | 'chair' | 'cushion' | 'pad';
+
+/** One accelerometer reading. */
+export interface Sample {
+  /** Seconds since the start of the trace. */
+  t: number;
+  /** m/s², gravity included. */
+  ax: number;
+  ay: number;
+  az: number;
+}
+
+export interface Trace {
+  routine: Routine;
+  sampleRateHz: number;
+  device: string;
+  /** ISO 8601 timestamp. */
+  startedAt: string;
+  samples: Sample[];
+}
+
+export interface Recording {
+  version: 1;
+  label: string;
+  surface: string;
+  notes?: string;
+  traces: Trace[];
+}
+
+export interface RepFeatures {
+  /** a_peak / v_impact, 1/s. Higher = firmer. */
+  peakOverV: number;
+  /** Impact to first return to 1 g, s. Shorter = firmer. */
+  stopTime: number;
+  /** A₂/A₁, 0..1. Higher = springier. 0 when there is no second peak. */
+  bounceRatio: number;
+  /** Time until within ±0.05 g of rest, s. Longer = springier. */
+  settleTime: number;
+}
+export type FeatureName = keyof RepFeatures;
+
+export type RejectReason =
+  | 'not-still'
+  | 'lean-too-much'
+  | 'lean-too-little'
+  | 'too-fast'
+  | 'too-slow'
+  | 'caught-landing'
+  | 'left-surface'
+  | 'no-drop-found'
+  | 'low-sample-rate';
+
+export type RepResult =
+  | {
+      ok: true;
+      features: RepFeatures;
+      /** m/s. */
+      impactSpeed: number;
+      leanDeg: number;
+      trace: Trace;
+    }
+  | { ok: false; reasons: RejectReason[]; trace: Trace };
+
+export interface HoverAssessment {
+  still: boolean;
+  /** RMS jitter, m/s². */
+  jitter: number;
+  leanDeg: number;
+  reasons: RejectReason[];
+}
+
+export interface RoutineSpec {
+  hoverMinS: number;
+  preRollS: number;
+  captureS: number;
+  restS: number;
+  leanTolDeg: number;
+  /** Fractional tolerance on impact speed, e.g. 0.2. */
+  speedTol: number;
+}
+
+export interface FeatureStats {
+  mean: number;
+  std: number;
+}
+
+export interface ReferenceStats {
+  routine: Routine;
+  repCount: number;
+  /** ISO 8601 timestamp. */
+  createdAt: string;
+  features: Record<FeatureName, FeatureStats>;
+  leanDeg: FeatureStats;
+  impactSpeed: FeatureStats;
+}
+
+export type Label = 'just-right' | 'slightly' | 'much';
+
+export interface Verdict {
+  hardness: number;
+  springiness: number;
+  hardnessLabel: Label;
+  springinessLabel: Label;
+  firmer: boolean;
+  bouncier: boolean;
+  /** 0..100. */
+  match: number;
+  perFeatureZ: Record<FeatureName, number>;
+}
+
+export interface Person {
+  id: string;
+  name: string;
+  bodyMassKg?: number;
+  references: Partial<Record<Routine, { stats: ReferenceStats; reps: RepResult[] }>>;
+}
+
+export interface Surface {
+  id: string;
+  name: string;
+  type: SurfaceType;
+}
+
+export interface TestRecord {
+  id: string;
+  personId: string;
+  surfaceId: string;
+  routine: Routine;
+  /** ISO 8601 timestamp. */
+  createdAt: string;
+  device: string;
+  sampleRateHz: number;
+  /** Accepted and rejected reps, with raw traces. */
+  reps: RepResult[];
+  verdict: Verdict;
+}
+
+export type LiveState =
+  | 'idle'
+  | 'positioning'
+  | 'holding'
+  | 'armed'
+  | 'capturing'
+  | 'resting'
+  | 'done';
+
+export type CueKey =
+  | 'place-phone'
+  | 'hold-still'
+  | 'lean-less'
+  | 'lean-more'
+  | 'drop-when-ready'
+  | 'captured'
+  | 'rep-accepted'
+  | 'rep-rejected'
+  | 'rest'
+  | 'next-rep'
+  | 'done';
+
+export type BeepPattern = 'ready' | 'captured' | 'accepted' | 'rejected';
+
+export interface Cue {
+  key: CueKey;
+  text: string;
+  beep?: BeepPattern;
+}

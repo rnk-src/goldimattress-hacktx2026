@@ -201,7 +201,7 @@ Start only after the core works on both routines.
 - Whole-body fit (spine alignment, pressure maps).
 
 ## Development
-- Check command: `npm run check` runs typecheck, lint and Vitest. Run it before every merge.
+- Check command: `npm run check` runs typecheck, lint, Vitest and dependency-cruiser (package boundaries). Run it before every merge.
 - Tests feed the signal core **synthetic acceleration traces** with known answers (hover, then a damped spring at a set f and A₂/A₁). They also check that tilted, moving and caught-landing reps are rejected.
 - Phone testing during development: Vite dev server + an ngrok HTTPS tunnel (iOS needs HTTPS for motion permission).
 - Users always use the GitHub Pages build, which runs without any laptop.

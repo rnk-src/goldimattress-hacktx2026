@@ -1,0 +1,31 @@
+{
+  "name": "goldimattress",
+  "version": "0.0.0",
+  "description": "Phone-only web app that compares mattress and cushion feel to a reference (HackTX 2026).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "deps": "depcruise src --config .dependency-cruiser.cjs",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run deps"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "dependency-cruiser": "^18.7.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "happy-dom": "^21.0.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}
