@@ -122,10 +122,6 @@ describe('synthRep invalid options', () => {
     expect(() => synthRep({ bounceRatio })).toThrow(RangeError);
   });
 
-  it('says a failure mode is not built yet instead of ignoring it', () => {
-    expect(() => synthRep({ failure: 'caught-landing' })).toThrow(/not implemented/);
-  });
-
   it('accepts failure "none"', () => {
     expect(() => synthRep({ failure: 'none' })).not.toThrow();
   });
@@ -190,5 +186,26 @@ describe('synthRep failure "left-surface"', () => {
 
   it('keeps the normal response above 0.1 g otherwise', () => {
     expect(run({}).filter((s) => mag(s) < 0.1)).toHaveLength(0);
+  });
+});
+
+describe('synthRep failure "caught-landing"', () => {
+  const excessAfterImpact = (opts: Parameters<typeof synthRep>[0]) =>
+    synthRep({ sampleRateHz: 1000, noise: 0, ...opts })
+      .samples.filter((s) => s.t >= 1.3)
+      .map((s) => mag(s) - G);
+
+  it('smears the impact into one slow hump that returns to 1 g after 1/(π·failureSize) s', () => {
+    const excess = excessAfterImpact({ failure: 'caught-landing', failureSize: 0.5, bounceRatio: 0.4 });
+    const stop = excess.findIndex((e) => e <= 0) / 1000;
+    expect(stop).toBeCloseTo(1 / (Math.PI * 0.5), 1);
+    const later = excess.slice(Math.round(stop * 1000) + 50);
+    expect(Math.max(...later)).toBeLessThan(0.1);
+  });
+
+  it('is softer than the same rep landed normally', () => {
+    const caught = Math.max(...excessAfterImpact({ failure: 'caught-landing' }));
+    const normal = Math.max(...excessAfterImpact({}));
+    expect(caught).toBeLessThan(normal / 2);
   });
 });
