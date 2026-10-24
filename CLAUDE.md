@@ -171,11 +171,34 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - LiDAR depth: needs a custom iOS app.
 - Hand press: no force reading.
 
-## Open questions
-- **Load source**: body sit-drop, plate, or sit-drop with a plate fallback.
-- **Height method**: marked guide + free-fall timing to correct speed and reject drops >15% off. A sit-drop uses impact-speed normalization instead.
-- **Display**: local Streamlit page with a live plot and a "Too hard / Too soft / Just right" verdict.
-- **Team**: roles are not yet assigned.
+## Validation before building analysis
+Build a raw-capture page first (permission button, record, show `event.interval`, export JSON). Use it for:
+1. **Sample rate**: if a real iPhone gives < ~50 Hz, reconsider Expo.
+2. **Consistency**: 5 sit-drops each on two surfaces. The method works if the within-surface spread is smaller than the between-surface gap.
+3. **Depth (topper experiment)**: bridge drops on (A) a bare springy mattress, (B) a soft topper on that mattress, (C) the topper on the floor.
+   - B between A and C: the drop reaches the core.
+   - B ≈ C: it reads only the topper.
+Recorded traces become test fixtures.
+
+## Stretch goal: shared surface listings
+Start only after the core works on both routines.
+- People upload test results (not the analysis) to a shared database. Provider chosen at the event (Supabase, Firebase or sponsor cloud).
+- Body-dependent results must be separated into a surface effect and a person effect:
+  - **Layer 1 (physics)**: each person enters body weight. k ≈ m · (a_peak / v)² and k = 4π²m·f² scale results toward the surface's own stiffness.
+  - **Layer 2 (statistics)**: model each result as surface effect + person effect + noise. Solve by least squares (two-way fixed effects, a simple matrix factorization). It works with few people if they share surfaces.
+  - Layer 2 runs on the phone after downloading results. The cloud only stores data.
+- Cold start: a new person tests one listed surface to fix their person effect.
+- Then anyone can compare a listing against their own reference without testing it.
+- k-means on (hardness, springiness) tags listings as foam-like, spring-like or hybrid-like.
+- Listings show the test count and spread, because the same model varies with age and toppers.
+- A neural network is not appropriate: the dataset is tiny.
+
+## Out of scope
+- Bluetooth or ESP32 hardware (needs a native or Expo shell).
+- The back-flop routine.
+- Slow memory-foam recovery after unloading.
+- Any absolute stiffness value.
+- Whole-body fit (spine alignment, pressure maps).
 
 ## Git workflow
 - `main` stays clean. Each task gets a branch: `feat/<name>`, `fix/<name>`, `docs/<name>`.
