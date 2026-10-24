@@ -30,3 +30,15 @@ Rules:
 - `npm run check` enforces the import rules. Do not weaken a rule to make code pass.
 - Import another package only through its `index.ts`.
 - Do not touch hardware, flash firmware or open serial ports.
+
+## UI work and design tools
+Design skills and tools (a taste or design-review skill, a `DESIGN.md` design system, an image-to-Three.js tool) are allowed. They must obey these limits.
+- Put all UI code in the `app` package. Keep `signal`, `session` and `domain` free of UI code.
+- Use vanilla TypeScript and Vite. Do not add a UI framework (React, Vue, Svelte) or a CSS framework, even if a tool suggests one.
+- Add a runtime dependency (for example `three`) only after the lead agrees. Check its size first. The app must load fast on a phone and work offline.
+- If you add Three.js, load it lazily from `app`. Keep it out of the sensing path.
+- Keep one design system. Put it in a single `DESIGN.md` at the repo root. Do not copy a real brand's name, logo or assets.
+- Do not edit `CLAUDE.md` to record tool settings or personal preferences.
+- UI code follows the same test-first loop. Test screens through `startApp` with the injected fakes. Keep visual polish out of the tests.
+- The UI must still show coaching text for every voice or beep cue. Voice is not the only channel.
+- Do not commit screenshots or reference images unless the lead asks. Do not push to the remote.
