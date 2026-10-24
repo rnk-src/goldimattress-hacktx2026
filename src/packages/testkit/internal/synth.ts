@@ -100,6 +100,7 @@ export function synthRep(opts: SynthOptions = {}): Trace {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
   if (bounceRatio < 0 || bounceRatio >= 1) throw new RangeError('bounceRatio must be in [0, 1)');
+  // shortcut: only failure 'none' exists; add each mode with its reject test in #8 and #11.
   if (opts.failure !== undefined && opts.failure !== 'none') {
     throw new Error(`failure '${opts.failure}' is not implemented yet`);
   }
