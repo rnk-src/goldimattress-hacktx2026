@@ -1,0 +1,1 @@
+{"version":1,"label":"example","surface":"Example cushion","notes":"Hand-written format sample. Real recordings arrive with gate G2.","traces":[{"routine":"sit-drop","sampleRateHz":60,"device":"example","startedAt":"2026-01-01T00:00:00.000Z","samples":[{"t":0,"ax":0,"ay":9.81,"az":0},{"t":0.016667,"ax":0.01,"ay":9.8,"az":0.02},{"t":0.033333,"ax":0,"ay":9.82,"az":0.01}]}]}
