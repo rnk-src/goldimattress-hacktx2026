@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 
+// Packages whose tests need a DOM. Keep in step with the pure-package list in eslint.config.js.
 const domPackages = ['sensors', 'store', 'coach', 'app'];
 
 export default defineConfig({

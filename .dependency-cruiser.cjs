@@ -25,11 +25,21 @@ module.exports = {
       },
     })),
     {
-      name: 'no-cross-package-internal',
+      name: 'index-only',
       comment: 'Reach other packages only through their index.ts.',
       severity: 'error',
       from: { path: '^src/packages/([^/]+)/' },
-      to: { path: '^src/packages/([^/]+)/internal/', pathNot: '^src/packages/$1/' },
+      to: {
+        path: '^src/packages/',
+        pathNot: ['^src/packages/$1/', '^src/packages/[^/]+/index\.ts$'],
+      },
+    },
+    {
+      name: 'main-index-only',
+      comment: 'The composition root reaches packages only through their index.ts.',
+      severity: 'error',
+      from: { path: '^src/main\.ts$' },
+      to: { path: '^src/packages/', pathNot: '^src/packages/[^/]+/index\.ts$' },
     },
     {
       name: 'testkit-tests-only',
@@ -41,6 +51,7 @@ module.exports = {
   ],
   options: {
     tsConfig: { fileName: 'tsconfig.json' },
+    tsPreCompilationDeps: true,
     doNotFollow: { path: 'node_modules' },
     exclude: { path: 'node_modules' },
   },
