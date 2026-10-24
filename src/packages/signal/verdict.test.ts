@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeatureName, ReferenceStats, RepFeatures, RepResult, Routine } from '../domain';
-import { compare } from './index';
+import { buildReference, compare } from './index';
 
 const trace = (routine: Routine = 'sit-drop') => ({
   routine,
@@ -116,5 +116,53 @@ describe('compare', () => {
     expect(at(1.9).springinessLabel).toBe('just-right');
     expect(at(2.1).springinessLabel).toBe('slightly');
     expect(at(3.1).springinessLabel).toBe('much');
+  });
+});
+
+describe('buildReference', () => {
+  const five = (over: (i: number) => RepResult = () => rep()) => [0, 1, 2, 3, 4].map(over);
+
+  it('rejects fewer than 5 ok reps as too-few', () => {
+    const bad: RepResult = { ok: false, reasons: ['not-still'], trace: trace() };
+    const r = buildReference([rep(), rep(), rep(), rep(), bad], 'sit-drop');
+    expect(r).toEqual({ ok: false, reason: 'too-few', outliers: [] });
+  });
+
+  it('computes mean and sample std per feature, lean and impact speed', () => {
+    const reps = five((i) => rep({ peakOverV: 18 + i }, { impactSpeed: 0.6 + 0.01 * i, leanDeg: 14 + i }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.ref.routine).toBe('sit-drop');
+    expect(r.ref.repCount).toBe(5);
+    expect(r.ref.createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(r.ref.features.peakOverV.mean).toBeCloseTo(20);
+    expect(r.ref.features.peakOverV.std).toBeCloseTo(Math.sqrt(2.5));
+    expect(r.ref.features.stopTime.std).toBeCloseTo(0);
+    expect(r.ref.leanDeg.mean).toBeCloseTo(16);
+    expect(r.ref.impactSpeed.mean).toBeCloseTo(0.62);
+  });
+
+  it('rejects impact-speed CV above 20% as speed-spread, worst outlier first', () => {
+    const speeds = [0.6, 0.6, 0.2, 0.6, 1.1];
+    const r = buildReference(five((i) => rep({}, { impactSpeed: speeds[i]! })), 'sit-drop');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('speed-spread');
+    expect(r.outliers[0]).toBe(4);
+    expect(r.outliers[1]).toBe(2);
+  });
+
+  it('rejects a lean range above 10 degrees as lean-spread, worst outlier first', () => {
+    const leans = [15, 15, 15, 15, 30];
+    const r = buildReference(five((i) => rep({}, { leanDeg: leans[i]! })), 'sit-drop');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe('lean-spread');
+    expect(r.outliers[0]).toBe(4);
+  });
+
+  it('accepts reps within 20% CV and 10 degrees', () => {
+    const r = buildReference(five((i) => rep({}, { impactSpeed: 0.5 + 0.05 * i, leanDeg: 10 + 2 * i })), 'sit-drop');
+    expect(r.ok).toBe(true);
   });
 });
