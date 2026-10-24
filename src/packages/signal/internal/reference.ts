@@ -1,7 +1,7 @@
-import type { FeatureName, FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
+import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
+import { FEATURE_NAMES } from './features';
 import { std } from './math';
 
-const NAMES: FeatureName[] = ['peakOverV', 'stopTime', 'bounceRatio', 'settleTime'];
 const MIN_REPS = 5;
 const MAX_SPEED_CV = 0.2;
 const MAX_LEAN_RANGE_DEG = 10;
@@ -24,11 +24,17 @@ function worstFirst(reps: readonly RepResult[], value: (r: OkRep) => number): nu
 /** Mean and std per feature over the ok reps, or the reason the reps cannot form a reference. */
 export function buildReference(reps: readonly RepResult[], routine: Routine): Result {
   const ok = reps.flatMap((r) => (r.ok ? [r] : []));
+  if (ok.some((r) => r.trace.routine !== routine)) {
+    // The declared failure union has no routine reason, so this throws like compare.
+    throw new RangeError(`rep routine does not match ${routine}`);
+  }
   if (ok.length < MIN_REPS) return { ok: false, reason: 'too-few', outliers: [] };
 
   const speeds = ok.map((r) => r.impactSpeed);
+  const meanSpeed = mean(speeds);
   // shortcut: outliers lists every ok rep ordered by distance from the mean, not only the offenders; the caller redoes the first few. Trim when the UI needs a count.
-  if (std(speeds) / mean(speeds) > MAX_SPEED_CV) {
+  // A mean speed of 0 or less (or NaN) is not a usable reference; the negated test also catches NaN.
+  if (!(meanSpeed > 0) || std(speeds) / meanSpeed > MAX_SPEED_CV) {
     return { ok: false, reason: 'speed-spread', outliers: worstFirst(reps, (r) => r.impactSpeed) };
   }
   const leans = ok.map((r) => r.leanDeg);
@@ -37,7 +43,7 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   }
 
   const features = {} as ReferenceStats['features'];
-  for (const k of NAMES) features[k] = stats(ok.map((r) => r.features[k]));
+  for (const k of FEATURE_NAMES) features[k] = stats(ok.map((r) => r.features[k]));
   return {
     ok: true,
     ref: {

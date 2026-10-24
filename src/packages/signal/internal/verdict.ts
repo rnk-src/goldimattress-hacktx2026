@@ -1,6 +1,5 @@
 import type { FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
-
-const NAMES: FeatureName[] = ['peakOverV', 'stopTime', 'bounceRatio', 'settleTime'];
+import { FEATURE_NAMES } from './features';
 
 /** Share of |μ_ref| below which a spread is treated as noise. */
 const REL_FLOOR = 0.08;
@@ -29,7 +28,7 @@ export function compare(reps: readonly RepResult[], ref: ReferenceStats): Verdic
     throw new RangeError(`rep routine does not match reference routine ${ref.routine}`);
   }
   const z = {} as Record<FeatureName, number>;
-  for (const k of NAMES) {
+  for (const k of FEATURE_NAMES) {
     const mean = ok.reduce((s, r) => s + r.features[k], 0) / ok.length;
     const { mean: mu, std } = ref.features[k];
     const sigmaEff = Math.max(std, REL_FLOOR * Math.abs(mu), ABS_FLOOR[k]);

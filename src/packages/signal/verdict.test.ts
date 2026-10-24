@@ -161,6 +161,19 @@ describe('buildReference', () => {
     expect(r.outliers[0]).toBe(4);
   });
 
+  it('throws RangeError when a rep routine differs from the routine argument', () => {
+    const reps = five((i) => rep({}, { routine: i === 3 ? 'bridge-drop' : 'sit-drop' }));
+    expect(() => buildReference(reps, 'sit-drop')).toThrow(RangeError);
+  });
+
+  it('rejects a zero or negative mean impact speed as speed-spread', () => {
+    for (const s of [0, -0.6]) {
+      const r = buildReference(five(() => rep({}, { impactSpeed: s })), 'sit-drop');
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe('speed-spread');
+    }
+  });
+
   it('accepts reps within 20% CV and 10 degrees', () => {
     const r = buildReference(five((i) => rep({}, { impactSpeed: 0.5 + 0.05 * i, leanDeg: 10 + 2 * i })), 'sit-drop');
     expect(r.ok).toBe(true);
