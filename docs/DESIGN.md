@@ -2,24 +2,27 @@
 
 ## Overview
 - A hackathon project (HackTX 2026), inspired by Goldilocks and the three beds.
-- A user calibrates the device on a mattress or cushion they like (the reference).
-- They then test other surfaces. The device reports how close each one is to the reference.
+- A phone-only web app. Users need nothing but their phone: no laptop, no extra hardware.
+- A user calibrates on a mattress or cushion they like (the reference).
+- They then test other surfaces. The app reports whether each one is too hard, too soft or just right *for them*.
+- Scope: mattresses first (the costliest wrong purchase), plus couches, chairs and cushions.
 - It measures two properties:
   - **Hardness**: how the surface resists a load (the downward phase, including bottoming out).
   - **Springiness**: how the surface bounces back while the load is still on it.
-- The sensor is a smartphone accelerometer, read through the phyphox app.
-- There is no check command yet.
+- The sensor is the phone's accelerometer. The load is the user's own body.
 
 ## Measurement physics
-Model the surface as a mass-spring-damper. A known mass m falls from height h.
+Model the surface as a mass-spring-damper. A mass m falls from height h. With the body as the load, m is the user's effective body mass.
 - **Impact speed**: v = √(2gh). The same height gives the same momentum, so drops are comparable.
 - **Hardness (impulse)**: F·Δt = Δp. A firm surface gives a tall, narrow spike; a soft one gives a low, wide hump.
   Features: peak |a| and stopping time.
 - **Stiffness (SHM)**: the mass bobs with period T = 2π√(m/k), so k = 4π²m/T².
 - **Springiness (damping)**: amplitude ratio of consecutive bounce peaks, A₂/A₁. Near 1 = springy; near 0 = dead (memory foam).
-- **Free-fall trigger**: in "Acceleration with g" mode, |a| ≈ 0 during free fall, then jumps at impact.
-  - Fall time gives h = ½gt² and v = g·t.
-- **Height normalization**: for a linear spring, a_peak / v ≈ √(k/m), independent of drop height.
+- **Body drops are not free fall**: the legs still carry some weight while they give way, so |a| does not reach ~0.
+  - Start: detect the still hover (low jitter, |a| ≈ 1 g). This is the zero-velocity point.
+  - Impact speed: integrate (|a| − g) from the end of the hover to impact (~0.3 s window).
+  - A dropped object does reach ~0 g; then fall time gives h = ½gt² and v = g·t.
+- **Speed normalization**: for a linear spring, a_peak / v ≈ √(k/m), independent of drop height.
 - **Orientation**: use |a| = √(ax²+ay²+az²). It does not depend on how the phone faces.
 
 Caveats:
@@ -27,37 +30,115 @@ Caveats:
 - A drop that is too high makes the mass leave the surface again (a second ~0 g window). Detect this.
 - Slow memory-foam recovery after the load is removed is out of scope.
 - Hardness and damping are separate axes. Firm foam and a soft innerspring can share hardness but differ in damping. Report both.
+- A seated human body resonates vertically at ~4–6 Hz, and its tissue adds damping. The body-on-surface bounce is ~1–3 Hz.
+  Body effects cancel when the same person calibrates and tests, so results are relative only. Never report an absolute k.
 
-## Sensor and architecture
-### phyphox (current source)
-- Free, open-source app from RWTH Aachen. The iPhone IMU runs at about 100 Hz.
-- Experiment: "Acceleration with g" (raw, so free fall reads ~0).
-- Remote access: enable it in the app. It shows a URL like `http://<phone-ip>:8080`.
-  - Control: `/control?cmd=start`, `/control?cmd=stop`, `/control?cmd=clear`.
-  - Data: `/get?accX=full&accY=full&accZ=full&acc_time=full` returns JSON.
-- Pattern: clear → start → drop → wait ~2 s → stop → fetch the full buffer. Live polling misses the impact.
-- Network: venue Wi-Fi may block device-to-device traffic. Test it first. Fall back to a phone hotspot.
-- Keep phyphox in the foreground. Turn off auto-lock.
-- At 100 Hz a short impact spike can fall between samples. Prefer frequency, damping and settle time over a single peak value.
+## Architecture
+### Platform
+- Web app (PWA) in vanilla **TypeScript + Vite**. No UI framework.
+- All analysis runs **on the phone**. There is no backend in the core app.
+- Users reach it through **GitHub Pages** (HTTPS), deployed by a GitHub Action on every push to `main`.
+- Fallback if the browser sample rate is too low: Expo (`expo-sensors`, ~100 Hz). The signal core ports unchanged.
+
+### Sensor: `DeviceMotionEvent`
+- Read `accelerationIncludingGravity` (raw, gravity included).
+- iOS: call `DeviceMotionEvent.requestPermission()` from a user tap, over HTTPS. Otherwise no events arrive.
+- Android: `requestPermission` is undefined. Feature-detect and listen directly.
+- The iOS sample rate is unverified (~60 Hz expected). Log `event.interval` on a real device before building analysis.
+- Coaching: Web Audio beeps and `speechSynthesis`. `navigator.wakeLock` keeps the screen on. iOS has no `navigator.vibrate`.
+- At ~60 Hz a short spike can fall between samples. Prefer frequency, damping and settle time over a single peak value.
 
 ### Code structure
-- A `SensorSource` interface returns arrays of `(t, ax, ay, az)`.
-- `PhyphoxSource` is the first implementation.
-- A future `SerialSource` (ESP32 + MPU6050) plugs in without changing feature extraction or the UI.
-- Pipeline: source → drop segmentation (free-fall window, impact) → features → compare to reference → verdict.
-- Language: Python.
+- The **signal core** is plain TS with no DOM or framework imports. It is unit-testable and portable.
+- `SensorSource` returns arrays of `(t, ax, ay, az)`.
+  - `DeviceMotionSource` is the first implementation.
+  - A future Bluetooth IMU puck (ESP32 + IMU) needs a native or Expo shell, because iOS Safari has no Web Bluetooth.
+- `Store` persists people, references and tests.
+  - `LocalStore` (`localStorage`) is the first implementation. `CloudStore` is the stretch goal.
+- Pipeline per rep: hover detect → stillness + angle check → impact segmentation → impact speed → features → accept or reject.
+- Per test: 5 accepted reps → feature means → compare to reference → verdict.
+- The sensing half hands the app half one agreed result type (features + verdict + rejected reps). Fix it before building either side.
+
+### Data recorded per test
+- **Person**: anonymous ID, body weight, one reference per routine.
+- **Surface**: ID, name, type (mattress, couch, cushion, pad).
+- **Test**: person ID, surface ID, routine, timestamp, device model, sample rate, per-rep features, rejected reps with reasons.
+- **Raw acceleration per rep** (~3 s, a few kB). Keep it, so improved feature code can recompute old tests.
+
+### Prototyping tool
+- phyphox (free, RWTH Aachen) can log the iPhone IMU at ~100 Hz for quick offline comparisons. It is not part of the product.
 
 ## Design decisions
 | Decision | Choice | Reason |
 |---|---|---|
 | Output | % match to the reference, plus per-feature direction ("firmer, less bouncy") | Comparing to a reference avoids calibrating an absolute scale. |
-| Measurement | Free drop from a fixed height | The drop height fixes the input energy. A hand press adds human variation. |
+| Measurement | A drop onto the surface, not a press | A drop fixes the input energy. A hand press adds human variation. |
+| Load | The user's body | Real body pressure with nothing to carry. A phone alone reads only the top layer. |
+| Routines | Sit-drop for seating, bridge drop for mattresses | The bridge drop tests where people sleep, not the edge. |
+| Phone placement | Sternum (sit-drop), lower belly over hip bones (bridge drop) | The phone must ride on the body part that drops. |
+| Posture | Natural lean, recorded at calibration, enforced ±5° | Natural and safe; the phone measures it so users need not. |
 | Springiness | Bounce and damping while the load stays on the surface | Hardness alone cannot tell foam from springs. |
-| Sensor | phyphox now, behind `SensorSource` | A microcontroller IMU can replace it later. |
-| Calibration | 5 reference drops; store each feature's mean and spread | The spread separates real differences from noise. |
-| Demo surfaces | Cushions, pads and pillows brought to the demo | Does not depend on a bed at the venue. |
+| Sensor | `DeviceMotionEvent` behind `SensorSource` | Runs in any phone browser. A Bluetooth IMU can replace it later. |
+| Platform | Vanilla TS + Vite web app on GitHub Pages | No install, any phone, no laptop needed. |
+| Analysis | On the phone | Works offline; no server to fail. |
+| Storage | `LocalStore` now, `CloudStore` later | Local first; the interface allows a shared database. |
+| Calibration | 5 reps; store each feature's mean and spread | The spread separates real differences from noise. |
+| References | One per routine per person | Routines produce different signals and cannot be compared. |
+| Surface identity | Typed name with autocomplete | Simplest way to link tests of the same item. |
+| Demo | Live on cushions and couches; video of a bed; topper experiment slide | No bed at the venue. |
 
-## Load options
+## Body test protocol
+The same person calibrates and tests, so the protocol must make the body act the same way every rep. The app checks this, not the user.
+
+### Routines
+| Routine | Surfaces | Phone placement | Movement |
+|---|---|---|---|
+| **Sit-drop** | Couches, chairs, loose cushions and pads | Flat on the sternum, portrait, screen out, arms crossed over it | Stand with your back to the surface, squat to hover ~10 cm (a fist) above it with a natural forward lean, hold still, relax the legs and drop |
+| **Bridge drop** | Mattresses (middle of the bed, hip zone) | Flat on the lower belly over the hip bones, held with both hands | Lie on your back, lift the hips ~10 cm into a glute bridge, hold still, go limp and drop |
+
+- Loose cushions and pads go on the same chair every time. This fixes the height and avoids bottoming out onto the floor.
+- A mattress sit-drop at the edge measures edge support, not the sleep surface. Use the bridge drop for mattresses.
+
+### Checks the app enforces on every rep
+- **Stillness**: low jitter during the hover before the drop.
+- **Angle**: torso lean (sit-drop) or pelvis angle (bridge drop) from the gravity vector during the hover. Calibration records it; test reps must be within ±5°.
+- **Impact speed**: within ±20% of the reference.
+- **Caught landing**: a soft, smeared impact suggests tensed legs. Reject it.
+- Rejected reps show a message ("lean a bit less", "hold still") and do not count.
+
+### Held constant by the user
+- Same person, shoes off, pockets empty, thin clothing over the phone.
+- Legs fully relaxed at impact. Feet flat, same distance from the surface.
+- Same landing spot: sit-drop ~30 cm in from the edge; bridge drop at normal hip position.
+- Stay still and hold your breath for 2 s after impact.
+- Rest ~20 s between reps so foam recovers. 5 accepted reps per test.
+
+### Safety
+- Hover 10 cm or less. Never drop from standing height.
+- Check what is under a loose cushion. Avoid exposed frames and box-spring edges.
+- People with back or tailbone problems should not do drop tests.
+
+## Verdict rule
+Features per rep:
+| Feature | Property | Firmer / springier means |
+|---|---|---|
+| `peak_over_v` = a_peak / v_impact | Hardness | higher = firmer |
+| `stop_time` (impact to first return to 1 g) | Hardness | shorter = firmer |
+| `bounce_ratio` = A₂/A₁ | Springiness | higher = springier |
+| `settle_time` (until within ±0.05 g of rest) | Springiness | longer = springier |
+
+Steps:
+1. Calibration stores each feature's mean μ_ref and standard deviation σ_ref over 5 reps.
+2. A test averages 5 reps to get μ_test.
+3. Per feature: z = (μ_test − μ_ref) / σ_eff, where σ_eff = max(σ_ref, 8% of μ_ref).
+   The floor stops very consistent users from getting imperceptible differences flagged. Tune 8% with real data.
+4. Hardness score H = mean(z_peak_over_v, −z_stop_time). Springiness score S = mean(z_bounce_ratio, z_settle_time).
+5. Labels: |score| < 2 = just right / same bounce; 2–3 = "slightly"; > 3 = "much". The sign gives harder/softer and bouncier/deader.
+6. Match = 100 · e^(−(H² + S²) / 8). Examples: H = S = 0 → 100%; H = 2, S = 0 → 61%; H = S = 2 → 37%.
+
+±2 is used because ~95% of a person's own reps on the reference fall inside it.
+
+## Load options considered
 Target contact pressure ≈ 1.2–1.4 kPa (an average lying body: ~70 kg over ~0.5 m²). P = mg/A.
 
 ### Phone alone (~0.2 kg, ~0.18 kPa)
@@ -81,13 +162,8 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - A flat 8.5 × 11 in book needs ~8 kg (3–5 hardcovers) for body pressure. One 2 kg book gives ~0.36 kPa.
 - One book fixes the sampling problem but not bottoming out. A small base under it (a CD case) gives ~1.1 kPa but may tip.
 
-### Body sit-drop
-- Hold the phone flat against the chest, then drop into a sit on the surface. The body is the load, at real body pressure.
-- It recovers bottoming out and deep support. The bounce is ~1–3 Hz, which samples well.
-- It calibrates to the person: "just right for you".
-- Risk: people do not sit the same way twice. Mitigate with a fixed routine, impact-speed normalization, 5 reps and outlier rejection.
-- Consistency test: 5 sit-drops each on two surfaces. Keep the method if the within-surface spread is smaller than the between-surface gap. Otherwise fall back to the plate.
-- Limits: it tests the edge zone, and surfaces must hold a seated person.
+### Body (chosen)
+- The body applies real body pressure and needs no carried weight. See "Body test protocol".
 
 ### Other options
 - Phone tilt beside the person: hardness only, and it depends on distance.
@@ -95,11 +171,43 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - LiDAR depth: needs a custom iOS app.
 - Hand press: no force reading.
 
-## Open questions
-- **Load source**: body sit-drop, plate, or sit-drop with a plate fallback.
-- **Height method**: marked guide + free-fall timing to correct speed and reject drops >15% off. A sit-drop uses impact-speed normalization instead.
-- **Display**: local Streamlit page with a live plot and a "Too hard / Too soft / Just right" verdict.
-- **Team**: roles are not yet assigned.
+## Validation before building analysis
+Build a raw-capture page first (permission button, record, show `event.interval`, export JSON). Use it for:
+1. **Sample rate**: if a real iPhone gives < ~50 Hz, reconsider Expo.
+2. **Consistency**: 5 sit-drops each on two surfaces. The method works if the within-surface spread is smaller than the between-surface gap.
+3. **Depth (topper experiment)**: bridge drops on (A) a bare springy mattress, (B) a soft topper on that mattress, (C) the topper on the floor.
+   - B between A and C: the drop reaches the core.
+   - B ≈ C: it reads only the topper.
+Recorded traces become test fixtures.
+
+## Stretch goal: shared surface listings
+Start only after the core works on both routines.
+- People upload test results (not the analysis) to a shared database. Provider chosen at the event (Supabase, Firebase or sponsor cloud).
+- Body-dependent results must be separated into a surface effect and a person effect:
+  - **Layer 1 (physics)**: each person enters body weight. k ≈ m · (a_peak / v)² and k = 4π²m·f² scale results toward the surface's own stiffness.
+  - **Layer 2 (statistics)**: model each result as surface effect + person effect + noise. Solve by least squares (two-way fixed effects, a simple matrix factorization). It works with few people if they share surfaces.
+  - Layer 2 runs on the phone after downloading results. The cloud only stores data.
+- Cold start: a new person tests one listed surface to fix their person effect.
+- Then anyone can compare a listing against their own reference without testing it.
+- k-means on (hardness, springiness) tags listings as foam-like, spring-like or hybrid-like.
+- Listings show the test count and spread, because the same model varies with age and toppers.
+- A neural network is not appropriate: the dataset is tiny.
+
+## Out of scope
+- Bluetooth or ESP32 hardware (needs a native or Expo shell).
+- The back-flop routine.
+- Slow memory-foam recovery after unloading.
+- Any absolute stiffness value.
+- Whole-body fit (spine alignment, pressure maps).
+
+## Development
+- Check command: `npm run check` runs typecheck, lint and Vitest. Run it before every merge.
+- Tests feed the signal core **synthetic acceleration traces** with known answers (hover, then a damped spring at a set f and A₂/A₁). They also check that tilted, moving and caught-landing reps are rejected.
+- Phone testing during development: Vite dev server + an ngrok HTTPS tunnel (iOS needs HTTPS for motion permission).
+- Users always use the GitHub Pages build, which runs without any laptop.
+- Work splits into two equal halves:
+  - **Sensing**: capture, hover and angle checks, segmentation, impact speed, features, verdict. Stretch: Layer 1/2 normalization, clustering.
+  - **App and data**: hosting, permission flow, screens, coaching, `LocalStore`. Stretch: `CloudStore`, listings, autocomplete.
 
 ## Git workflow
 - `main` stays clean. Each task gets a branch: `feat/<name>`, `fix/<name>`, `docs/<name>`.
