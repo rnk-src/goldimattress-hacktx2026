@@ -13,6 +13,11 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
   let firstT = 0;
   let lastT = 0;
 
+  const stop = () => {
+    timers.forEach(clearTimeout);
+    timers = [];
+  };
+
   const emit = (s: Sample, onSample: (s: Sample) => void) => {
     if (emitted === 0) firstT = s.t;
     lastT = s.t;
@@ -23,7 +28,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
   return {
     requestAccess: () => Promise.resolve('granted'),
     start(onSample) {
-      this.stop();
+      stop();
       emitted = 0;
       const t0 = trace.samples[0]?.t ?? 0;
       for (const s of trace.samples) {
@@ -32,10 +37,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
         else timers.push(setTimeout(() => emit(s, onSample), delayMs));
       }
     },
-    stop() {
-      timers.forEach(clearTimeout);
-      timers = [];
-    },
+    stop,
     get sampleRateHz() {
       if (emitted < MIN_SAMPLES_FOR_RATE || lastT <= firstT) return null;
       return (emitted - 1) / (lastT - firstT);

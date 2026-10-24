@@ -1,5 +1,5 @@
 import type { RepFeatures } from '../../domain';
-import { assertSurfaceStaysInContact, excessAcceleration } from './response';
+import { assertSurfaceStaysInContact, excessAcceleration, underdamped } from './response';
 import { DEFAULTS, GRAVITY, type SynthOptions } from './synth';
 
 const SETTLE_BAND = 0.05 * GRAVITY;
@@ -40,12 +40,7 @@ export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
     return { peakOverV: excess(0) / v, stopTime, bounceRatio, settleTime };
   }
 
-  const sigma = -Math.log(bounceRatio) * bounceHz;
-  const omegaSq = omegaD ** 2 + sigma ** 2;
-  const phase = Math.atan2(2 * sigma * omegaD, omegaSq - 2 * sigma ** 2);
-  const alpha = Math.atan2(omegaD, sigma);
-  /** Time of the k-th extremum. Even k are positive peaks. */
-  const extremum = (k: number) => (alpha + k * Math.PI - phase) / omegaD;
+  const { phase, extremum } = underdamped(bounceHz, bounceRatio);
 
   const peakOverV = (extremum(0) > 0 ? excess(extremum(0)) : excess(0)) / v;
   const stopTime = (Math.PI - phase) / omegaD;
