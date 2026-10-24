@@ -123,7 +123,7 @@ describe('synthRep invalid options', () => {
   });
 
   it('says a failure mode is not built yet instead of ignoring it', () => {
-    expect(() => synthRep({ failure: 'tilt' })).toThrow(/not implemented/);
+    expect(() => synthRep({ failure: 'caught-landing' })).toThrow(/not implemented/);
   });
 
   it('accepts failure "none"', () => {
@@ -143,5 +143,52 @@ describe('synthRep timing and contact limits', () => {
 
   it('rejects options where the surface would have to pull below 0 g', () => {
     expect(() => synthRep({ impactSpeed: 2.5, bounceHz: 5, bounceRatio: 0.9 })).toThrow(RangeError);
+  });
+});
+
+describe('synthRep failure "tilt"', () => {
+  it('leans failureSize degrees further from the axis than leanDeg', () => {
+    const s = synthRep({ noise: 0, leanDeg: 15, failure: 'tilt', failureSize: 7 }).samples[0]!;
+    expect(angleFrom(s, 'ay')).toBeCloseTo(22, 6);
+  });
+});
+
+describe('synthRep failure "moving-hover"', () => {
+  const hoverMag = (opts: Parameters<typeof synthRep>[0]) =>
+    synthRep({ noise: 0, hoverS: 1, ...opts }).samples.filter((s) => s.t < 1).map(mag);
+
+  it('wobbles |a| by failureSize m/s² during the hover', () => {
+    const wobble = hoverMag({ failure: 'moving-hover', failureSize: 1.2 }).map((m) => m - G);
+    expect(Math.max(...wobble)).toBeGreaterThan(1.1);
+    expect(Math.min(...wobble)).toBeLessThan(-1.1);
+    expect(Math.max(...wobble)).toBeLessThanOrEqual(1.2 + 1e-9);
+  });
+
+  it('leaves the descent and the response unchanged', () => {
+    const still = synthRep({ noise: 0 }).samples.filter((s) => s.t >= 1);
+    const moving = synthRep({ noise: 0, failure: 'moving-hover' }).samples.filter((s) => s.t >= 1);
+    expect(moving).toEqual(still);
+  });
+});
+
+describe('synthRep failure "no-drop"', () => {
+  it('stays at 1 g for the whole trace', () => {
+    const { samples } = synthRep({ noise: 0, durationS: 6, failure: 'no-drop' });
+    for (const s of samples) expect(mag(s)).toBeCloseTo(G, 9);
+  });
+});
+
+describe('synthRep failure "left-surface"', () => {
+  const run = (opts: Parameters<typeof synthRep>[0]) =>
+    synthRep({ sampleRateHz: 1000, noise: 0, ...opts }).samples.filter((s) => s.t > 1.3);
+
+  it('drops |a| to 0 g for failureSize seconds after the first bounce', () => {
+    const flight = run({ failure: 'left-surface', failureSize: 0.2 }).filter((s) => mag(s) < 0.1);
+    expect(flight.length).toBeGreaterThanOrEqual(199);
+    expect(flight.length).toBeLessThanOrEqual(201);
+  });
+
+  it('keeps the normal response above 0.1 g otherwise', () => {
+    expect(run({}).filter((s) => mag(s) < 0.1)).toHaveLength(0);
   });
 });

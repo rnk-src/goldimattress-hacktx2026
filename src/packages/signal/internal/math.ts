@@ -40,3 +40,9 @@ export function findPeaks(ys: readonly number[], opts: { minHeight?: number } = 
   }
   return peaks;
 }
+
+/** Samples per second from the first and last sample time. 0 for fewer than 2 times. */
+export function estimateRate(times: readonly number[]): number {
+  if (times.length < 2) return 0;
+  return (times.length - 1) / (times[times.length - 1]! - times[0]!);
+}
