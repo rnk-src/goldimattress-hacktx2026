@@ -72,11 +72,20 @@ Caveats:
 | Decision | Choice | Reason |
 |---|---|---|
 | Output | % match to the reference, plus per-feature direction ("firmer, less bouncy") | Comparing to a reference avoids calibrating an absolute scale. |
-| Measurement | Free drop from a fixed height | The drop height fixes the input energy. A hand press adds human variation. |
+| Measurement | A drop onto the surface, not a press | A drop fixes the input energy. A hand press adds human variation. |
+| Load | The user's body | Real body pressure with nothing to carry. A phone alone reads only the top layer. |
+| Routines | Sit-drop for seating, bridge drop for mattresses | The bridge drop tests where people sleep, not the edge. |
+| Phone placement | Sternum (sit-drop), lower belly over hip bones (bridge drop) | The phone must ride on the body part that drops. |
+| Posture | Natural lean, recorded at calibration, enforced ±5° | Natural and safe; the phone measures it so users need not. |
 | Springiness | Bounce and damping while the load stays on the surface | Hardness alone cannot tell foam from springs. |
-| Sensor | phyphox now, behind `SensorSource` | A microcontroller IMU can replace it later. |
-| Calibration | 5 reference drops; store each feature's mean and spread | The spread separates real differences from noise. |
-| Demo surfaces | Cushions, pads and pillows brought to the demo | Does not depend on a bed at the venue. |
+| Sensor | `DeviceMotionEvent` behind `SensorSource` | Runs in any phone browser. A Bluetooth IMU can replace it later. |
+| Platform | Vanilla TS + Vite web app on GitHub Pages | No install, any phone, no laptop needed. |
+| Analysis | On the phone | Works offline; no server to fail. |
+| Storage | `LocalStore` now, `CloudStore` later | Local first; the interface allows a shared database. |
+| Calibration | 5 reps; store each feature's mean and spread | The spread separates real differences from noise. |
+| References | One per routine per person | Routines produce different signals and cannot be compared. |
+| Surface identity | Typed name with autocomplete | Simplest way to link tests of the same item. |
+| Demo | Live on cushions and couches; video of a bed; topper experiment slide | No bed at the venue. |
 
 ## Body test protocol
 The same person calibrates and tests, so the protocol must make the body act the same way every rep. The app checks this, not the user.
