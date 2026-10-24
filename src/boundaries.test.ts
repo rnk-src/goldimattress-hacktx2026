@@ -25,8 +25,15 @@ function violatedRules(files: Record<string, string>): string[] {
   let json: string;
   try {
     json = execFileSync(
-      join(root, 'node_modules/.bin/depcruise'),
-      ['src', '--config', join(root, '.dependency-cruiser.cjs'), '--output-type', 'json'],
+      process.execPath,
+      [
+        join(root, 'node_modules/dependency-cruiser/bin/dependency-cruiser.mjs'),
+        'src',
+        '--config',
+        join(root, '.dependency-cruiser.cjs'),
+        '--output-type',
+        'json',
+      ],
       { cwd: dir, encoding: 'utf8' },
     );
   } catch (e) {
