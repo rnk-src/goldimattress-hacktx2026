@@ -8,10 +8,10 @@ Use Node.js 22 or newer and install the locked dependencies before starting Vite
 
 ```bash
 npm ci
-npm run dev -- --host 0.0.0.0
+npm run dev
 ```
 
-Vite prints the local address and normally uses port `5173`. The `--host 0.0.0.0` flag lets the tunnel reach the development server.
+Vite prints the local address and normally uses port `5173`. ngrok connects to localhost, so the server does not need to listen on the network.
 
 ## Test on an iPhone over HTTPS
 
@@ -46,6 +46,4 @@ Before the first deployment, open the repository's **Settings → Pages** and se
 2. On a phone, open <https://rnk-src.github.io/goldimattress-hacktx2026/> over HTTPS.
 3. Confirm the page loads without a 404 and refreshes successfully on the same repository URL.
 4. Once the motion capture screen is available, tap **Enable motion** on a real iPhone and confirm Safari shows the motion-access prompt.
-
-The workflow, repository Pages setting, and physical-phone checks cannot be fully verified from a local branch.
 
