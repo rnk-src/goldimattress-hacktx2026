@@ -13,7 +13,10 @@ export function synthStream(reps: readonly SynthOptions[], restS = 20): Sample[]
     const pieces = [synthRep(rep).samples];
     if (i < reps.length - 1) {
       const seed = (rep.seed ?? DEFAULTS.seed) + 1000;
-      pieces.push(synthRep({ ...rep, failure: 'no-drop', durationS: restS, seed }).samples);
+      // 'tilt' is a lean change, so bake it into leanDeg to keep the pose through the rest.
+      const tilt = rep.failure === 'tilt' ? (rep.failureSize ?? 10) : 0;
+      const leanDeg = (rep.leanDeg ?? DEFAULTS.leanDeg) + tilt;
+      pieces.push(synthRep({ ...rep, leanDeg, failure: 'no-drop', durationS: restS, seed }).samples);
     }
     for (const piece of pieces) {
       const rate = rep.sampleRateHz ?? DEFAULTS.sampleRateHz;
