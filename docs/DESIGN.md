@@ -78,7 +78,58 @@ Caveats:
 | Calibration | 5 reference drops; store each feature's mean and spread | The spread separates real differences from noise. |
 | Demo surfaces | Cushions, pads and pillows brought to the demo | Does not depend on a bed at the venue. |
 
-## Load options
+## Body test protocol
+The same person calibrates and tests, so the protocol must make the body act the same way every rep. The app checks this, not the user.
+
+### Routines
+| Routine | Surfaces | Phone placement | Movement |
+|---|---|---|---|
+| **Sit-drop** | Couches, chairs, loose cushions and pads | Flat on the sternum, portrait, screen out, arms crossed over it | Stand with your back to the surface, squat to hover ~10 cm (a fist) above it with a natural forward lean, hold still, relax the legs and drop |
+| **Bridge drop** | Mattresses (middle of the bed, hip zone) | Flat on the lower belly over the hip bones, held with both hands | Lie on your back, lift the hips ~10 cm into a glute bridge, hold still, go limp and drop |
+
+- Loose cushions and pads go on the same chair every time. This fixes the height and avoids bottoming out onto the floor.
+- A mattress sit-drop at the edge measures edge support, not the sleep surface. Use the bridge drop for mattresses.
+
+### Checks the app enforces on every rep
+- **Stillness**: low jitter during the hover before the drop.
+- **Angle**: torso lean (sit-drop) or pelvis angle (bridge drop) from the gravity vector during the hover. Calibration records it; test reps must be within ±5°.
+- **Impact speed**: within ±20% of the reference.
+- **Caught landing**: a soft, smeared impact suggests tensed legs. Reject it.
+- Rejected reps show a message ("lean a bit less", "hold still") and do not count.
+
+### Held constant by the user
+- Same person, shoes off, pockets empty, thin clothing over the phone.
+- Legs fully relaxed at impact. Feet flat, same distance from the surface.
+- Same landing spot: sit-drop ~30 cm in from the edge; bridge drop at normal hip position.
+- Stay still and hold your breath for 2 s after impact.
+- Rest ~20 s between reps so foam recovers. 5 accepted reps per test.
+
+### Safety
+- Hover 10 cm or less. Never drop from standing height.
+- Check what is under a loose cushion. Avoid exposed frames and box-spring edges.
+- People with back or tailbone problems should not do drop tests.
+
+## Verdict rule
+Features per rep:
+| Feature | Property | Firmer / springier means |
+|---|---|---|
+| `peak_over_v` = a_peak / v_impact | Hardness | higher = firmer |
+| `stop_time` (impact to first return to 1 g) | Hardness | shorter = firmer |
+| `bounce_ratio` = A₂/A₁ | Springiness | higher = springier |
+| `settle_time` (until within ±0.05 g of rest) | Springiness | longer = springier |
+
+Steps:
+1. Calibration stores each feature's mean μ_ref and standard deviation σ_ref over 5 reps.
+2. A test averages 5 reps to get μ_test.
+3. Per feature: z = (μ_test − μ_ref) / σ_eff, where σ_eff = max(σ_ref, 8% of μ_ref).
+   The floor stops very consistent users from getting imperceptible differences flagged. Tune 8% with real data.
+4. Hardness score H = mean(z_peak_over_v, −z_stop_time). Springiness score S = mean(z_bounce_ratio, z_settle_time).
+5. Labels: |score| < 2 = just right / same bounce; 2–3 = "slightly"; > 3 = "much". The sign gives harder/softer and bouncier/deader.
+6. Match = 100 · e^(−(H² + S²) / 8). Examples: H = S = 0 → 100%; H = 2, S = 0 → 61%; H = S = 2 → 37%.
+
+±2 is used because ~95% of a person's own reps on the reference fall inside it.
+
+## Load options considered
 Target contact pressure ≈ 1.2–1.4 kPa (an average lying body: ~70 kg over ~0.5 m²). P = mg/A.
 
 ### Phone alone (~0.2 kg, ~0.18 kPa)
@@ -102,13 +153,8 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - A flat 8.5 × 11 in book needs ~8 kg (3–5 hardcovers) for body pressure. One 2 kg book gives ~0.36 kPa.
 - One book fixes the sampling problem but not bottoming out. A small base under it (a CD case) gives ~1.1 kPa but may tip.
 
-### Body sit-drop
-- Hold the phone flat against the chest, then drop into a sit on the surface. The body is the load, at real body pressure.
-- It recovers bottoming out and deep support. The bounce is ~1–3 Hz, which samples well.
-- It calibrates to the person: "just right for you".
-- Risk: people do not sit the same way twice. Mitigate with a fixed routine, impact-speed normalization, 5 reps and outlier rejection.
-- Consistency test: 5 sit-drops each on two surfaces. Keep the method if the within-surface spread is smaller than the between-surface gap. Otherwise fall back to the plate.
-- Limits: it tests the edge zone, and surfaces must hold a seated person.
+### Body (chosen)
+- The body applies real body pressure and needs no carried weight. See "Body test protocol".
 
 ### Other options
 - Phone tilt beside the person: hardness only, and it depends on distance.
