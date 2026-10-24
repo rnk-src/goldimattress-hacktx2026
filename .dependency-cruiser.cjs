@@ -1,4 +1,4 @@
-/** Enforces the package boundaries in the spec (#1). */
+/** Package boundaries from the spec (#1). Each package lists what it may import. */
 const allowed = {
   app: ['domain', 'signal', 'session', 'sensors', 'store', 'coach', 'testkit', 'listings'],
   session: ['signal', 'domain'],
@@ -10,40 +10,36 @@ const allowed = {
   testkit: ['sensors', 'domain'],
   domain: [],
 };
-const pkgs = Object.keys(allowed);
+
+const importRules = Object.entries(allowed).map(([pkg, may]) => ({
+  name: `${pkg}-imports`,
+  severity: 'error',
+  from: { path: `^src/packages/${pkg}/` },
+  to: {
+    path: '^src/packages/',
+    pathNot: [pkg, ...may].map((p) => `^src/packages/${p}/`),
+  },
+}));
+
+const indexOnly = '^src/packages/[^/]+/index\\.ts$';
 
 module.exports = {
   forbidden: [
-    ...pkgs.map((pkg) => ({
-      name: `${pkg}-imports`,
-      comment: `${pkg} may import only: ${allowed[pkg].join(', ') || 'nothing'}.`,
-      severity: 'error',
-      from: { path: `^src/packages/${pkg}/` },
-      to: {
-        path: '^src/packages/',
-        pathNot: [`^src/packages/${pkg}/`, ...allowed[pkg].map((p) => `^src/packages/${p}/`)],
-      },
-    })),
+    ...importRules,
     {
       name: 'index-only',
-      comment: 'Reach other packages only through their index.ts.',
       severity: 'error',
       from: { path: '^src/packages/([^/]+)/' },
-      to: {
-        path: '^src/packages/',
-        pathNot: ['^src/packages/$1/', '^src/packages/[^/]+/index\.ts$'],
-      },
+      to: { path: '^src/packages/', pathNot: ['^src/packages/$1/', indexOnly] },
     },
     {
       name: 'main-index-only',
-      comment: 'The composition root reaches packages only through their index.ts.',
       severity: 'error',
-      from: { path: '^src/main\.ts$' },
-      to: { path: '^src/packages/', pathNot: '^src/packages/[^/]+/index\.ts$' },
+      from: { path: '^src/main\\.ts$' },
+      to: { path: '^src/packages/', pathNot: indexOnly },
     },
     {
       name: 'testkit-tests-only',
-      comment: 'Only test files may import testkit.',
       severity: 'error',
       from: { pathNot: ['\\.test\\.ts$', '^src/packages/testkit/'] },
       to: { path: '^src/packages/testkit/' },
