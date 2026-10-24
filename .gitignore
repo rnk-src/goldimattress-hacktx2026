@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+data/raw/
 
 # macOS / editors
 .DS_Store
