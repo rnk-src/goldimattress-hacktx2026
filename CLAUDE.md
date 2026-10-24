@@ -27,3 +27,22 @@ Caveats:
 - A drop that is too high makes the mass leave the surface again (a second ~0 g window). Detect this.
 - Slow memory-foam recovery after the load is removed is out of scope.
 - Hardness and damping are separate axes. Firm foam and a soft innerspring can share hardness but differ in damping. Report both.
+
+## Sensor and architecture
+### phyphox (current source)
+- Free, open-source app from RWTH Aachen. The iPhone IMU runs at about 100 Hz.
+- Experiment: "Acceleration with g" (raw, so free fall reads ~0).
+- Remote access: enable it in the app. It shows a URL like `http://<phone-ip>:8080`.
+  - Control: `/control?cmd=start`, `/control?cmd=stop`, `/control?cmd=clear`.
+  - Data: `/get?accX=full&accY=full&accZ=full&acc_time=full` returns JSON.
+- Pattern: clear → start → drop → wait ~2 s → stop → fetch the full buffer. Live polling misses the impact.
+- Network: venue Wi-Fi may block device-to-device traffic. Test it first. Fall back to a phone hotspot.
+- Keep phyphox in the foreground. Turn off auto-lock.
+- At 100 Hz a short impact spike can fall between samples. Prefer frequency, damping and settle time over a single peak value.
+
+### Code structure
+- A `SensorSource` interface returns arrays of `(t, ax, ay, az)`.
+- `PhyphoxSource` is the first implementation.
+- A future `SerialSource` (ESP32 + MPU6050) plugs in without changing feature extraction or the UI.
+- Pipeline: source → drop segmentation (free-fall window, impact) → features → compare to reference → verdict.
+- Language: Python.
