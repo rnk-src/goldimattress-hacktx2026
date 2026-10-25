@@ -37,12 +37,13 @@ export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
         : overBand(0) > 0
           ? bisect(overBand, 0, stopTime)
           : 0;
-    return { peakOverV: excess(0) / v, stopTime, bounceRatio, settleTime };
+    return { peak: excess(0), peakOverV: excess(0) / v, stopTime, bounceRatio, settleTime };
   }
 
   const { phase, extremum } = underdamped(bounceHz, bounceRatio);
 
-  const peakOverV = (extremum(0) > 0 ? excess(extremum(0)) : excess(0)) / v;
+  const peak = extremum(0) > 0 ? excess(extremum(0)) : excess(0);
+  const peakOverV = peak / v;
   const stopTime = (Math.PI - phase) / omegaD;
 
   let last = overBand(0) > 0 ? 0 : null;
@@ -52,8 +53,8 @@ export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
     if (overBand(t) <= 0) break;
     last = t;
   }
-  if (last === null) return { peakOverV, stopTime, bounceRatio, settleTime: 0 };
+  if (last === null) return { peak, peakOverV, stopTime, bounceRatio, settleTime: 0 };
   // The next zero crossing is below the band, and |excess| falls steadily until it.
   const nextZero = (Math.floor((last * omegaD + phase) / Math.PI) + 1) * Math.PI - phase;
-  return { peakOverV, stopTime, bounceRatio, settleTime: bisect(overBand, last, nextZero / omegaD) };
+  return { peak, peakOverV, stopTime, bounceRatio, settleTime: bisect(overBand, last, nextZero / omegaD) };
 }

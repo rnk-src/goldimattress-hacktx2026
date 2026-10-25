@@ -10,7 +10,7 @@ const trace = (routine: Routine = 'sit-drop') => ({
   samples: [],
 });
 
-const BASE: RepFeatures = { peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
+const BASE: RepFeatures = { peak: 12, peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
 
 function rep(
   f: Partial<RepFeatures> = {},
