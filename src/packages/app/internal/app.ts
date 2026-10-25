@@ -22,6 +22,17 @@ const READY_S = 10;
 const REPS = 5;
 /** The last seconds before a window opens that each get a beep. */
 const COUNT_IN_BEEPS = 3;
+
+function shortDeviceModel(value: string): string {
+  const device = value.trim();
+  if (/iPhone/i.test(device)) return 'iPhone';
+  if (/iPad/i.test(device)) return 'iPad';
+  const androidModel = device.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/[^;)]+)?[;)]/i)?.[1]?.trim();
+  if (androidModel) return androidModel;
+  if (/Android/i.test(device)) return 'Android phone';
+  if (/Mozilla\//i.test(device)) return 'Web browser';
+  return device.slice(0, 40) || 'Unknown device';
+}
 const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS + LATE_DROP_MARGIN_S;
 const REST_S = CAPTURE_SPEC.restS;
 
@@ -288,7 +299,7 @@ function captureView(
           traces.push({
             routine: 'sit-drop',
             sampleRateHz: (samples.length - 1) / (last.t - first.t),
-            device: deps.device,
+            device: shortDeviceModel(deps.device),
             startedAt,
             samples: samples.map((sample) => ({ ...sample, t: sample.t - first.t })),
           });
