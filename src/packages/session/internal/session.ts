@@ -47,6 +47,8 @@ export function createRepSession(opts: SessionOptions): RepSession {
   let restEndT = 0;
   let restWarned = false;
   let aborted = false;
+  /** Time of the first evaluation in the current unbroken run of still hovers. */
+  let stillSince: number | undefined;
   let state: LiveState = 'idle';
   let lastCue: CueKey | undefined;
   let buffer: Sample[] = [];
@@ -132,6 +134,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       if (recent[0]!.t > s.t - spec.hoverMinS + EPS) return out;
       const hover = assessHover(recent, opts.routine, opts.ref);
       if (!hover.still) {
+        stillSince = undefined;
         if (state === 'armed') {
           setState('capturing', out);
           cue('captured', out);
@@ -145,10 +148,14 @@ export function createRepSession(opts: SessionOptions): RepSession {
       }
       const leanFix = hover.reasons.find((r) => r === 'lean-too-much' || r === 'lean-too-little');
       if (leanFix) {
+        stillSince = undefined;
         setState('holding', out);
         cue(leanFix === 'lean-too-much' ? 'lean-less' : 'lean-more', out);
         return out;
       }
+      // A wobbling hover can pass single windows, so arm only after a sustained run of still ones.
+      stillSince ??= s.t;
+      if (s.t - stillSince < spec.hoverMinS - EPS) return out;
       setState('armed', out);
       cue('drop-when-ready', out);
       return out;
