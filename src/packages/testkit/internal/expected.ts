@@ -1,6 +1,6 @@
 import type { RepFeatures } from '../../domain';
 import { assertSurfaceStaysInContact, excessAcceleration, underdamped } from './response';
-import { DEFAULTS, GRAVITY, type SynthOptions } from './synth';
+import { DEFAULTS, GRAVITY, descentOf, type SynthOptions } from './synth';
 
 const SETTLE_BAND = 0.05 * GRAVITY;
 
@@ -20,7 +20,8 @@ function bisect(f: (t: number) => number, lo: number, hi: number): number {
  * `peakOverV` = (a_peak − g) / v. `settleTime` is the last time the excess exceeds ±0.05 g.
  */
 export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
-  const v = opts.impactSpeed ?? DEFAULTS.impactSpeed;
+  // shortcut: the answer is for a clean rep. It ignores `failure`, as it did before the rig.
+  const { impactSpeed: v } = descentOf({ ...opts, failure: 'none' });
   const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
   assertSurfaceStaysInContact(v, bounceHz, bounceRatio);
