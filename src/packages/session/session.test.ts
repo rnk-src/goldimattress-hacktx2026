@@ -98,7 +98,7 @@ describe('createRepSession reps', () => {
   });
 });
 
-const stats = (median: number) => ({ median, mad: 0.1 });
+const stats = (center: number) => ({ center, mad: 0.1 });
 /** A reference matching the testkit defaults: 15 degree lean, 0.6 m/s impact. */
 const REF: ReferenceStats = {
   routine: 'sit-drop',

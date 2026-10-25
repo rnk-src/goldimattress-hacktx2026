@@ -49,7 +49,7 @@ const decodeRep = (r: StoredRep): RepResult =>
   ({ ...(r.ok ? { weight: 1, hoverJitter: 0, issues: [] } : {}), ...r, trace: decodeTrace(r.trace) }) as RepResult;
 
 // shortcut: a reference saved with the old mean and std shape is dropped, so that person recalibrates; dev data only.
-const isCurrentStats = (s: ReferenceStats): boolean => typeof s.jitterScale === 'number' && 'median' in s.leanDeg;
+const isCurrentStats = (s: ReferenceStats): boolean => typeof s.jitterScale === 'number' && 'center' in s.leanDeg;
 
 export function encodePerson(p: Person): StoredPerson {
   const references: StoredPerson['references'] = {};

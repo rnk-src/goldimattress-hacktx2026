@@ -11,15 +11,15 @@ function hoverOf(opts: SynthOptions): Sample[] {
 }
 
 /** A reference whose only used field is the lean. */
-function refWithLean(routine: Routine, median: number): ReferenceStats {
-  const flat = { median: 0, mad: 0 };
+function refWithLean(routine: Routine, center: number): ReferenceStats {
+  const flat = { center: 0, mad: 0 };
   return {
     routine,
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
     features: { peak: flat, peakOverV: flat, stopTime: flat, bounceRatio: flat, settleTime: flat },
-    leanDeg: { median, mad: 1 },
-    impactSpeed: { median: 0.6, mad: 0.03 },
+    leanDeg: { center, mad: 1 },
+    impactSpeed: { center: 0.6, mad: 0.03 },
     jitterScale: 0.1,
   };
 }

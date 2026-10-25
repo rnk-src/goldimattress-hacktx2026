@@ -48,7 +48,7 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
   };
   const save = (data: Data) => {
     const stored: StoredData = {
-      version: 1,
+      version: 2,
       people: data.people.map(encodePerson),
       surfaces: data.surfaces,
       tests: data.tests.map(encodeTest),
