@@ -32,6 +32,9 @@ const BUILD_FAILURE = {
   'too-few': 'Too few accepted reps.',
 } as const;
 
+const droppedNote = (count: number): string =>
+  count === 0 ? '' : `<p>dropped ${count} ${count === 1 ? 'rep' : 'reps'} that didn't match the others</p>`;
+
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
   root.innerHTML = `
     <div class="app-shell">
@@ -167,7 +170,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         }
         result.hidden = false;
         result.innerHTML = built.ok
-          ? `<p>${accepted} accepted reps${event.outcome === 'low-confidence' ? ' — low confidence' : ''}</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
+          ? `<p>${accepted} accepted reps${event.outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<dl>${(Object.keys(built.ref.features) as FeatureName[])
               .map(
                 (name) =>
                   `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,

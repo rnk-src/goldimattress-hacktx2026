@@ -142,7 +142,7 @@ describe('calibrate screen', () => {
   it("drops one statistical outlier automatically and explains it without asking for a redo", async () => {
     const store = createLocalStore(memoryStorage());
     await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
-    const stream = goodStream([{ bounceHz: 8, seed: 9 }], 5);
+    const stream = goodStream([{ bounceRatio: 0.9, seed: 9 }], 7);
     const { root } = mount(createReplaySource(traceOf(stream)), '#/calibrate', store);
     await flush();
 
