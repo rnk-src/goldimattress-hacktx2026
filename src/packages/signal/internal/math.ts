@@ -78,9 +78,10 @@ export function smooth3(ys: readonly number[]): number[] {
  * Falls back to the weighted median below `minReps` values.
  */
 export function weightedTrimmedMean(xs: readonly number[], ws: readonly number[], trim: number, minReps: number): number {
+  const total = ws.reduce((sum, w) => sum + w, 0);
+  if (!(total > 0)) throw new RangeError('total weight must be positive');
   if (xs.length < minReps) return weightedMedian(xs, ws);
   const order = xs.map((x, i) => ({ x, w: ws[i]! })).sort((a, b) => a.x - b.x);
-  const total = order.reduce((sum, o) => sum + o.w, 0);
   const lo = trim * total;
   const hi = (1 - trim) * total;
   let cum = 0;
