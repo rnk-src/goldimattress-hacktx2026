@@ -245,6 +245,59 @@ describe('startApp', () => {
     expect(span).toBeGreaterThan(spec.preRollS + spec.captureS);
   });
 
+  it('rebases each exported trace to seconds since that trace started', async () => {
+    vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:rebased';
+    });
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'Replay phone',
+      newId: () => 'test-id',
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
+
+    expect(recording.traces.map((trace) => trace.samples[0]!.t)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it('exports a short device model instead of the browser user agent', async () => {
+    vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:device';
+    });
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      newId: () => 'test-id',
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
+
+    expect(recording.traces.every((trace) => trace.device === 'iPhone')).toBe(true);
+  });
+
   it('shows the measured sample rate and event interval', async () => {
     vi.useFakeTimers();
     const root = document.createElement('main');
