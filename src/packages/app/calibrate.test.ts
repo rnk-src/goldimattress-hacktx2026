@@ -350,6 +350,23 @@ describe('calibrate screen', () => {
     expect(root.querySelector('[data-existing-reference]')?.textContent).toContain('will replace');
   });
 
+  it('warns about the reference it just saved when the same routine is picked again', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const routine = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+    routine.value = 'bridge-drop';
+    routine.dispatchEvent(new Event('change'));
+    routine.value = 'sit-drop';
+    routine.dispatchEvent(new Event('change'));
+
+    expect(root.querySelector('[data-existing-reference]')?.textContent).toContain('will replace');
+  });
+
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
     const { root, cues } = mount(createReplaySource(traceOf(goodStream([]))));
     expect(root.textContent).toContain('sternum');

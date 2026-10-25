@@ -1,5 +1,5 @@
 import type { Person, Surface, TestRecord } from '../../domain';
-import { encodePerson, encodeTest } from './codec';
+import { decodePerson, decodeTest, encodePerson, encodeTest } from './codec';
 import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
@@ -80,7 +80,11 @@ export function readStoredState(raw: string | null): { data: StoredData; corrupt
   const data = parsed as Record<string, unknown>;
   if (data.version === undefined) {
     try {
-      return { data: migrateV0(data as Parameters<typeof migrateV0>[0]), corrupt: false };
+      const migrated = migrateV0(data as Parameters<typeof migrateV0>[0]);
+      // Reading it back is what proves the old data has the shape the app needs.
+      migrated.people.forEach(decodePerson);
+      migrated.tests.forEach(decodeTest);
+      return { data: migrated, corrupt: false };
     } catch {
       // Old data of the wrong shape (a person without references, a test without reps) is as unreadable as bad JSON.
       return { data: emptyStored(), corrupt: true };
