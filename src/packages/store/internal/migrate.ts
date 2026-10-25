@@ -1,5 +1,5 @@
 import type { Person, Surface, TestRecord } from '../../domain';
-import { decodeSamples, encodePerson, encodeTest } from './codec';
+import { encodePerson, encodeTest } from './codec';
 import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
@@ -20,12 +20,11 @@ const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'obj
 /** A stored trace holds one base64 string that decodes to whole samples. */
 function isStoredTrace(x: unknown): boolean {
   if (!isObject(x) || typeof x.samples !== 'string') return false;
-  try {
-    decodeSamples(x.samples);
-    return true;
-  } catch {
-    return false;
-  }
+  const encoded = x.samples;
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return false;
+  const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+  const bytes = (encoded.length / 4) * 3 - padding;
+  return bytes % 16 === 0;
 }
 
 const areReps = (x: unknown): boolean =>
