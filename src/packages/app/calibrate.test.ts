@@ -283,9 +283,10 @@ describe('calibrate screen', () => {
     await flush();
 
     const [saved] = await store.listPeople();
-    const stamps = saved?.references['sit-drop']?.reps.map((rep) => rep.trace.startedAt) ?? [];
-    expect(new Set(stamps).size).toBe(stamps.length);
-    expect(stamps).toEqual([...stamps].sort());
+    const stamps = (saved?.references['sit-drop']?.reps ?? []).map((rep) => Date.parse(rep.trace.startedAt));
+    expect(stamps).toHaveLength(5);
+    // Each rep starts at least one rest after the previous one started.
+    for (let i = 1; i < stamps.length; i += 1) expect(stamps[i]! - stamps[i - 1]!).toBeGreaterThanOrEqual(REST_S * 1_000);
   });
 
   it('labels the finish button with the usable reps so far', async () => {
@@ -299,6 +300,28 @@ describe('calibrate screen', () => {
     await flush();
 
     expect(root.querySelector('[data-action="finish-calibration"]')?.textContent).toBe('Finish with 4 reps');
+  });
+
+  it('enables finish after three reps and disables it once the run is done', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const samples = synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], REST_S);
+    const last = samples.at(-1)!;
+    for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
+    const { root } = mount(createReplaySource(traceOf(samples)), '#/calibrate', store);
+    await flush();
+    const finish = root.querySelector<HTMLButtonElement>('[data-action="finish-calibration"]')!;
+    expect(finish.hidden).toBe(true);
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+    expect(finish.hidden).toBe(false);
+    expect(finish.disabled).toBe(false);
+    finish.click();
+    await flush();
+
+    expect(finish.hidden).toBe(true);
+    expect(finish.disabled).toBe(true);
   });
 
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
