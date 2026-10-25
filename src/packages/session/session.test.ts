@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Cue, ReferenceStats, RejectReason, Sample } from '../domain';
 import { synthStream } from '../testkit';
-import { createRepSession, rejectMessage } from './index';
+import { createRepSession, positionCue, rejectMessage } from './index';
 import type { SessionEvent } from './index';
 
 function run(session: ReturnType<typeof createRepSession>, samples: Sample[]): SessionEvent[] {
@@ -185,5 +185,51 @@ describe('rejectMessage', () => {
 describe('rejectMessage for rig reasons', () => {
   it.each(['flight-mismatch', 'tilted-landing'] as const)('gives %s a fix message', (reason) => {
     expect(rejectMessage(reason)).toMatch(/\S/);
+  });
+});
+
+describe('createRepSession rig-drop', () => {
+  const RIG = { massKg: 2.1, baseCm: [17.5, 9] as [number, number], dropHeightCm: 5, spot: 'center' as const };
+  const rigRep = { routine: 'rig-drop' as const, dropHeightCm: 5, sampleRateHz: 57, durationS: 5 };
+
+  it('runs synthetic rig reps to done with no taps, stamping the rig on each trace', () => {
+    const session = createRepSession({ routine: 'rig-drop', goal: 3, rig: RIG });
+    const events = run(session, synthStream([rigRep, rigRep, rigRep], 20));
+    expect(session.state).toBe('done');
+    expect(events.at(-1)?.kind).toBe('done');
+    const reps = events.flatMap((e) => (e.kind === 'rep' ? [e.result] : []));
+    expect(reps).toHaveLength(3);
+    for (const r of reps) {
+      expect(r.ok).toBe(true);
+      expect(r.trace.rig).toEqual(RIG);
+    }
+  });
+
+  it('uses the rig wording for the place, level and release cues', () => {
+    const session = createRepSession({ routine: 'rig-drop' });
+    const events = run(session, synthStream([rigRep]).slice(0, 80));
+    const text = (key: string) => cues(events).find((c) => c.key === key)?.text;
+    expect(text('place-phone')).toBe('Strap the phone face up on the slab and rest the slab on the spacer.');
+    expect(text('drop-when-ready')).toBe('Let go with both hands.');
+    expect(positionCue('off').text).toBe('Hold the phone upright against your breastbone, screen facing out.');
+    expect(positionCue('off', 'rig-drop').text).toBe('Hold the slab level.');
+    expect(positionCue('ok', 'rig-drop').text).toBe('Slab level. Hold still.');
+  });
+
+  it('says to hold the slab level when it tilts past 20 degrees', () => {
+    const session = createRepSession({ routine: 'rig-drop' });
+    const events = run(session, synthStream([{ ...rigRep, leanDeg: 25 }]).slice(0, 80));
+    expect(cues(events).find((c) => c.key === 'phone-off')?.text).toBe('Hold the slab level.');
+    expect(session.state).toBe('holding');
+  });
+
+  it('does not arm or capture early on a jittery hold', () => {
+    const session = createRepSession({ routine: 'rig-drop' });
+    const events = run(session, synthStream([{ ...rigRep, failure: 'moving-hover' }]).slice(0, 57));
+    const states = events.flatMap((e) => (e.kind === 'state' ? [e.state] : []));
+    expect(states).not.toContain('armed');
+    expect(states).not.toContain('capturing');
+    expect(events.some((e) => e.kind === 'rep')).toBe(false);
+    expect(keys(events)).toContain('hold-still');
   });
 });
