@@ -144,7 +144,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     }
     routineSelect.disabled = true;
     clearProgress();
-    session = createRepSession({ routine: routine(), goal: CALIBRATION_REPS });
+    session = createRepSession({ routine: routine() });
     running = true;
     void coach.keepAwake(true);
     deps.source.start((sample) => show(session!.push(sample)));

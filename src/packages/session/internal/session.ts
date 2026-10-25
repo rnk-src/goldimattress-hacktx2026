@@ -5,8 +5,6 @@ import { rejectMessage } from './messages';
 export interface SessionOptions {
   routine: Routine;
   ref?: ReferenceStats;
-  /** Accepted reps that end the session. Default 5. */
-  goal?: number;
 }
 
 export type SessionOutcome = 'complete' | 'low-confidence' | 'retry';
@@ -32,6 +30,7 @@ export interface RepSession {
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
 const MAX_ATTEMPTS = 10;
+const LOW_CONFIDENCE_TEXT = 'Session complete with low confidence.';
 // shortcut: duplicates signal's 1 m/s² drop ceiling, export the shared threshold if either package retunes it.
 const SCOREABLE_JITTER = 1;
 
@@ -51,12 +50,13 @@ const CUES: Record<CueKey, Cue> = {
 
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
-  const goal = opts.goal ?? 5;
+  const goal = 5;
   const restText = `Rest for ${spec.restS} seconds. Do not drop yet.`;
   let restEndT = 0;
   let restStartedT = 0;
   let restWarned = false;
-  let pendingRest: { seconds: number; skipped: boolean } | undefined;
+  let pendingRestSkipped: boolean | undefined;
+  let previousCaptureEndT: number | undefined;
   let aborted = false;
   /** Time of the first evaluation in the current unbroken run of still hovers. */
   let stillSince: number | undefined;
@@ -67,7 +67,6 @@ export function createRepSession(opts: SessionOptions): RepSession {
   let captureEndT = 0;
   let accepted = 0;
   let rejected = 0;
-  let latestT = 0;
   const reps: RepResult[] = [];
 
   const setState = (next: LiveState, out: SessionEvent[]) => {
@@ -101,13 +100,14 @@ export function createRepSession(opts: SessionOptions): RepSession {
       },
       opts.ref,
     );
-    if (result.ok && pendingRest) {
-      result = { ...result, restS: pendingRest.seconds, restSkipped: pendingRest.skipped };
+    if (result.ok && previousCaptureEndT !== undefined && pendingRestSkipped !== undefined) {
+      result = { ...result, restS: t0 - previousCaptureEndT, restSkipped: pendingRestSkipped };
     }
-    pendingRest = undefined;
+    pendingRestSkipped = undefined;
     capture = [];
     buffer = [];
     restStartedT = last.t;
+    previousCaptureEndT = last.t;
     restEndT = restStartedT + spec.restS;
     restWarned = false;
     reps.push(result);
@@ -122,7 +122,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       return;
     }
     if (reps.length >= MAX_ATTEMPTS) {
-      if (accepted >= 3) finish(out, 'low-confidence');
+      if (accepted >= 3) finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
       else finish(out, 'retry', 'This technique or surface is not working. Try again when you are ready.');
       return;
     }
@@ -134,7 +134,6 @@ export function createRepSession(opts: SessionOptions): RepSession {
     push(s) {
       const out: SessionEvent[] = [];
       if (state === 'done' || aborted) return out;
-      latestT = s.t;
       if (state === 'idle') {
         setState('positioning', out);
         cue('place-phone', out);
@@ -149,7 +148,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       buffer = buffer.filter((w) => s.t - w.t <= spec.preRollS + EPS);
       if (state === 'resting') {
         if (s.t >= restEndT - EPS) {
-          pendingRest = { seconds: s.t - restStartedT, skipped: false };
+          pendingRestSkipped = false;
           setState('positioning', out);
           cue('next-rep', out);
         } else if (!restWarned && Math.hypot(s.ax, s.ay, s.az) - GRAVITY > IMPACT_EXCESS) {
@@ -183,14 +182,14 @@ export function createRepSession(opts: SessionOptions): RepSession {
     },
     finishNow() {
       const out: SessionEvent[] = [];
-      if (aborted || state === 'done' || accepted < 3) return out;
-      finish(out, 'low-confidence');
+      if (aborted || state === 'done' || state === 'capturing' || accepted < 3) return out;
+      finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
       return out;
     },
     skipRest() {
       const out: SessionEvent[] = [];
       if (aborted || state !== 'resting') return out;
-      pendingRest = { seconds: Math.max(0, latestT - restStartedT), skipped: true };
+      pendingRestSkipped = true;
       setState('positioning', out);
       cue('next-rep', out);
       return out;
