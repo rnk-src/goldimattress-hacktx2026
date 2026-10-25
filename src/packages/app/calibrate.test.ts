@@ -157,6 +157,40 @@ describe('calibrate screen', () => {
     expect(root.querySelector('[data-calibration-result]')?.textContent).not.toContain('redo');
   });
 
+  it('finishes a sloppy session within ten attempts and still saves the reference', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const sloppy = [
+      { failure: 'caught-landing' },
+      { failure: 'moving-hover' },
+      { failure: 'left-surface' },
+      { failure: 'no-drop' },
+    ] as const;
+    const { root } = mount(
+      createReplaySource(traceOf(goodStream(sloppy.map((rep, i) => ({ ...rep, seed: 50 + i })), 10))),
+      '#/calibrate',
+      store,
+    );
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    expect(saved?.references['sit-drop']?.stats.repCount).toBeGreaterThanOrEqual(3);
+    expect(saved?.references['sit-drop']?.reps.length).toBeLessThanOrEqual(10);
+  });
+
+  it('shows usable reps out of five as the session goes', async () => {
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))));
+    expect(root.querySelector('[data-usable-count]')?.textContent).toBe('0 of 5 usable reps');
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    expect(root.querySelector('[data-usable-count]')?.textContent).toBe('5 of 5 usable reps');
+  });
+
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
     const { root, cues } = mount(createReplaySource(traceOf(goodStream([]))));
     expect(root.textContent).toContain('sternum');
