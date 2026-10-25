@@ -121,4 +121,16 @@ describe('parseRecording rig-drop', () => {
     expect(() => parseRecording(JSON.parse(JSON.stringify(rigRecording(bad))))).toThrow(RecordingFormatError);
     expect(() => parseRecording(rigRecording(bad))).toThrow(RecordingFormatError);
   });
+
+  it('requires a rig on a rig-drop trace', () => {
+    const rec = { ...recording, traces: [{ ...recording.traces[0], routine: 'rig-drop' }] };
+    const err = catchError(() => parseRecording(rec));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe('traces[0].rig');
+  });
+
+  it('still allows a rig on another routine', () => {
+    const rec = { ...recording, traces: [{ ...recording.traces[0], rig }] };
+    expect(parseRecording(rec).traces[0]!.rig).toEqual(rig);
+  });
 });
