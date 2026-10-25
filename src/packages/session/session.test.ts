@@ -98,7 +98,7 @@ describe('createRepSession reps', () => {
   });
 });
 
-const stats = (mean: number) => ({ mean, std: 0.1 });
+const stats = (median: number) => ({ median, mad: 0.1 });
 /** A reference matching the testkit defaults: 15 degree lean, 0.6 m/s impact. */
 const REF: ReferenceStats = {
   routine: 'sit-drop',
@@ -107,6 +107,7 @@ const REF: ReferenceStats = {
   features: { peakOverV: stats(20), stopTime: stats(0.2), bounceRatio: stats(0.4), settleTime: stats(2) },
   leanDeg: stats(15),
   impactSpeed: stats(0.6),
+  jitterScale: 0.1,
 };
 
 describe('createRepSession rejects', () => {
@@ -114,7 +115,7 @@ describe('createRepSession rejects', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{ failure: 'caught-landing' }, {}], 22));
     const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && !rep.result.ok && rep.result.reasons).toContain('caught-landing');
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('caught-landing');
     expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('caught-landing'));
     expect(session.rejected).toBe(1);
     expect(session.accepted).toBe(0);
@@ -124,7 +125,7 @@ describe('createRepSession rejects', () => {
     const session = createRepSession({ routine: 'sit-drop', ref: REF });
     const events = run(session, synthStream([{ impactSpeed: 1.0 }, {}], 22));
     const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && !rep.result.ok && rep.result.reasons).toContain('too-fast');
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('too-fast');
     expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('too-fast'));
   });
 });

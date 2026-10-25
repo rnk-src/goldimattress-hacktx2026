@@ -69,15 +69,13 @@ describe('analyzeRep on the real desk-chair set', () => {
     }
   });
 
-  it('flags the badly placed rep first when the five reps form a reference', () => {
+  it('builds a reference from all five reps, badly placed one included', () => {
     const traces = loadFixture('desk-chair-set1').traces;
-    const odd = oddRepOf(traces);
-    expect(hoverLean(traces[odd]!)).toBeGreaterThan(30);
+    expect(hoverLean(traces[oddRepOf(traces)]!)).toBeGreaterThan(30);
     const results: RepResult[] = traces.map((t) => analyzeRep(t));
     expect(results.every((r) => r.ok)).toBe(true);
-    const reference = buildReference(results, 'sit-drop');
-    expect(reference.ok).toBe(false);
-    if (!reference.ok) expect(reference.outliers[0]).toBe(odd);
+    // Lean is a covariate now, so the badly placed rep no longer fails the reference by itself.
+    expect(buildReference(results, 'sit-drop').ok).toBe(true);
   });
 
   it('builds a reference from the good reps', () => {
@@ -95,12 +93,17 @@ describe('analyzeRep on the real couch set', () => {
     expect([1, 2, 4].map((i) => verdictOf(t[i]!))).toEqual(['ok', 'ok', 'ok']);
   });
 
-  it('rejects the rep with a bump in the hover as not-still', () => {
-    expect(verdictOf(couch()[0]!)).toBe('not-still');
+  it('makes the rep with a bump in the hover unusable, naming not-still', () => {
+    const rep = accepted(couch()[0]!);
+    expect(rep.weight).toBeLessThan(0.5);
+    expect(rep.issues).toContain('not-still');
   });
 
-  it('rejects the rep whose legs were still moving in the hover as not-still', () => {
-    expect(verdictOf(couch()[3]!)).toBe('not-still');
+  it('keeps the rep whose legs were still moving usable at a lower weight', () => {
+    const rep = accepted(couch()[3]!);
+    expect(rep.weight).toBeGreaterThanOrEqual(0.5);
+    expect(rep.weight).toBeLessThan(1);
+    expect(rep.issues).toContain('not-still');
   });
 
   it('keeps the soft-couch features finite and plausible', () => {

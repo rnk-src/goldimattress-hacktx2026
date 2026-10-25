@@ -1,5 +1,5 @@
 import type { Cue, CueKey, LiveState, ReferenceStats, RepResult, Routine, Sample } from '../../domain';
-import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, routineSpec } from '../../signal';
+import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, isUsable, routineSpec } from '../../signal';
 import { rejectMessage } from './messages';
 
 export interface SessionOptions {
@@ -89,11 +89,12 @@ export function createRepSession(opts: SessionOptions): RepSession {
     restEndT = last.t + spec.restS;
     restWarned = false;
     reps.push(result);
-    if (result.ok) accepted += 1;
+    const usable = isUsable(result);
+    if (usable) accepted += 1;
     else rejected += 1;
     out.push({ kind: 'rep', result });
-    if (result.ok) cue('rep-accepted', out);
-    else cue('rep-rejected', out, rejectMessage(result.reasons[0]!), true);
+    if (usable) cue('rep-accepted', out);
+    else cue('rep-rejected', out, rejectMessage((result.ok ? result.issues : result.reasons)[0]!), true);
     if (accepted >= goal) {
       setState('done', out);
       cue('done', out);

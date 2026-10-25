@@ -62,6 +62,8 @@ export type RepResult =
       hoverJitter: number;
       /** Quality weight, 0..1. A rep is usable at 0.5 or more. */
       weight: number;
+      /** What lowered the weight, as the fix to show: lean, speed, hold still, relax. Empty at weight 1. */
+      issues: RejectReason[];
       /** Seconds the person rested before this rep. Set by the session, not by `analyzeRep`. Unset for the first rep. */
       restS?: number;
       /** True when the person skipped the rest. Set by the session. */
@@ -85,13 +87,13 @@ export interface RoutineSpec {
   captureS: number;
   restS: number;
   leanTolDeg: number;
-  /** Fractional tolerance on impact speed, e.g. 0.2. */
-  speedTol: number;
 }
 
 export interface FeatureStats {
-  mean: number;
-  std: number;
+  /** Quality-weighted median. */
+  median: number;
+  /** Quality-weighted MAD × 1.4826, comparable to a standard deviation. */
+  mad: number;
 }
 
 export interface ReferenceStats {
@@ -102,9 +104,16 @@ export interface ReferenceStats {
   features: Record<FeatureName, FeatureStats>;
   leanDeg: FeatureStats;
   impactSpeed: FeatureStats;
+  /** Median hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
+  jitterScale: number;
 }
 
 export type Label = 'just-right' | 'slightly' | 'much';
+
+/** How far a verdict can be trusted. */
+export type Confidence = 'confident' | 'close-call' | 'not-enough-data';
+/** Something that makes the verdict less reliable than the number says. */
+export type Caveat = 'lean-differs' | 'rest-skipped';
 
 export interface Verdict {
   hardness: number;
@@ -116,6 +125,13 @@ export interface Verdict {
   /** 0..100. */
   match: number;
   perFeatureZ: Record<FeatureName, number>;
+  /** One standard error either side of the score. */
+  hardnessInterval: [number, number];
+  springinessInterval: [number, number];
+  confidence: Confidence;
+  /** False until the hardness axis is verified across surfaces. While false, the match ignores hardness and the label should read "can't tell yet". */
+  hardnessReliable: boolean;
+  caveats: Caveat[];
 }
 
 export interface Person {

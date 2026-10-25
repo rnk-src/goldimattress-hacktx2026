@@ -14,15 +14,17 @@ const BASE: RepFeatures = { peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, sett
 
 function rep(
   f: Partial<RepFeatures> = {},
-  o: { impactSpeed?: number; leanDeg?: number; routine?: Routine } = {},
+  o: { impactSpeed?: number; leanDeg?: number; routine?: Routine; weight?: number; hoverJitter?: number; restSkipped?: boolean } = {},
 ): RepResult {
   return {
     ok: true,
     features: { ...BASE, ...f },
     impactSpeed: o.impactSpeed ?? 0.6,
     leanDeg: o.leanDeg ?? 15,
-    hoverJitter: 0.1,
-    weight: 1,
+    hoverJitter: o.hoverJitter ?? 0.1,
+    weight: o.weight ?? 1,
+    issues: [],
+    ...(o.restSkipped === undefined ? {} : { restSkipped: o.restSkipped }),
     trace: trace(o.routine),
   };
 }
@@ -30,14 +32,15 @@ function rep(
 /** Reference with chosen per-feature std (default 10% of the mean). */
 function ref(std: Partial<Record<FeatureName, number>> = {}, base: RepFeatures = BASE): ReferenceStats {
   const features = {} as ReferenceStats['features'];
-  for (const k of Object.keys(base) as FeatureName[]) features[k] = { mean: base[k], std: std[k] ?? 0.1 * base[k] };
+  for (const k of Object.keys(base) as FeatureName[]) features[k] = { median: base[k], mad: std[k] ?? 0.1 * base[k] };
   return {
     routine: 'sit-drop',
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
     features,
-    leanDeg: { mean: 15, std: 1 },
-    impactSpeed: { mean: 0.6, std: 0.02 },
+    leanDeg: { median: 15, mad: 1 },
+    impactSpeed: { median: 0.6, mad: 0.02 },
+    jitterScale: 0.1,
   };
 }
 
@@ -49,14 +52,15 @@ describe('compare', () => {
     expect(v.match).toBeCloseTo(100);
   });
 
-  it('gives match 61 for H = 2, S = 0 and 37 for H = S = 2', () => {
+  it('gives match 61 for H = 2, S = 0 and 37 for H = S = 2 once hardness is reliable', () => {
+    const opts = { hardnessReliable: true };
     // 10% ref std, so a 20% shift is z = 2.
     const harder = rep({ peakOverV: 24, stopTime: 0.16 });
-    const h = compare([harder], ref());
+    const h = compare([harder], ref(), opts);
     expect(h.hardness).toBeCloseTo(2);
     expect(h.springiness).toBeCloseTo(0);
     expect(Math.round(h.match)).toBe(61);
-    const both = compare([rep({ peakOverV: 24, stopTime: 0.16, bounceRatio: 0.48, settleTime: 1.8 })], ref());
+    const both = compare([rep({ peakOverV: 24, stopTime: 0.16, bounceRatio: 0.48, settleTime: 1.8 })], ref(), opts);
     expect(both.springiness).toBeCloseTo(2);
     expect(Math.round(both.match)).toBe(37);
   });
@@ -121,63 +125,174 @@ describe('compare', () => {
   });
 });
 
-describe('buildReference', () => {
-  const five = (over: (i: number) => RepResult = () => rep()) => [0, 1, 2, 3, 4].map(over);
+describe('compare uncertainty', () => {
+  const fiveOf = (f: Partial<RepFeatures> = {}, o: Parameters<typeof rep>[1] = {}) =>
+    [0, 1, 2, 3, 4].map(() => rep(f, o));
+  /** A 10% shift of both springiness features is z = 1 against the 10% reference spread. */
+  const bouncy = (z: number) => ({ bounceRatio: 0.4 * (1 + 0.1 * z), settleTime: 1.5 * (1 + 0.1 * z) });
 
-  it('rejects fewer than 5 ok reps as too-few', () => {
-    const bad: RepResult = { ok: false, reasons: ['not-still'], trace: trace() };
-    const r = buildReference([rep(), rep(), rep(), rep(), bad], 'sit-drop');
-    expect(r).toEqual({ ok: false, reason: 'too-few', outliers: [] });
+  it('matches on springiness alone until hardness is reliable', () => {
+    const harder = compare([rep({ peakOverV: 24, stopTime: 0.16 })], ref());
+    expect(harder.hardnessReliable).toBe(false);
+    expect(harder.match).toBeCloseTo(100);
+    const bouncier = compare([rep(bouncy(2))], ref());
+    expect(Math.round(bouncier.match)).toBe(61);
+    expect(compare([rep()], ref(), { hardnessReliable: true }).hardnessReliable).toBe(true);
   });
 
-  it('computes mean and sample std per feature, lean and impact speed', () => {
+  it('is confident with 5 usable reps that match the reference', () => {
+    expect(compare(fiveOf(), ref()).confidence).toBe('confident');
+  });
+
+  it('says not-enough-data below 3 usable reps', () => {
+    expect(compare([rep(), rep()], ref()).confidence).toBe('not-enough-data');
+  });
+
+  it('says not-enough-data when the usable reps are barely usable', () => {
+    expect(compare(fiveOf({}, { weight: 0.5 }), ref()).confidence).toBe('not-enough-data');
+  });
+
+  it('calls a springiness score near a label boundary a close call', () => {
+    expect(compare(fiveOf(bouncy(2)), ref()).confidence).toBe('close-call');
+    expect(compare(fiveOf(bouncy(3.1)), ref()).confidence).toBe('close-call');
+  });
+
+  it('is confident when the springiness interval sits inside one label', () => {
+    expect(compare(fiveOf(bouncy(0.5)), ref()).confidence).toBe('confident');
+    expect(compare(fiveOf(bouncy(5)), ref()).confidence).toBe('confident');
+  });
+
+  it('ignores hardness for confidence while hardness is unreliable', () => {
+    const harder = fiveOf({ peakOverV: 24, stopTime: 0.16 });
+    expect(compare(harder, ref()).confidence).toBe('confident');
+  });
+
+  it('gives each axis an interval of one standard error about the score', () => {
+    const v = compare([rep(bouncy(1)), rep(bouncy(1)), rep(bouncy(1)), rep(bouncy(1))], ref());
+    expect(v.springinessInterval[0]).toBeCloseTo(v.springiness - 0.5);
+    expect(v.springinessInterval[1]).toBeCloseTo(v.springiness + 0.5);
+  });
+
+  it('widens the spread floor by 1.5 for a reference built from 3 or 4 reps', () => {
+    const tight = { bounceRatio: 0.0001, settleTime: 0.0001 };
+    const full = compare(fiveOf(bouncy(2)), ref(tight));
+    const small = compare(fiveOf(bouncy(2)), { ...ref(tight), repCount: 3 });
+    expect(small.springiness).toBeCloseTo(full.springiness / 1.5);
+  });
+
+  it('takes the weighted median of the test reps, not the mean', () => {
+    const v = compare([rep({ peakOverV: 20 }), rep({ peakOverV: 20 }), rep({ peakOverV: 40 })], ref());
+    expect(v.perFeatureZ.peakOverV).toBeCloseTo(0);
+  });
+
+  it('does not count a rep below the usable weight', () => {
+    const v = compare([rep(), rep(), rep(), rep({ bounceRatio: 0.9, settleTime: 5 }, { weight: 0.2 })], ref());
+    expect(v.springiness).toBeCloseTo(0);
+  });
+
+  it('adds a lean caveat when the test lean differs from the reference by more than 10 degrees', () => {
+    expect(compare(fiveOf({}, { leanDeg: 30 }), ref()).caveats).toContain('lean-differs');
+    expect(compare(fiveOf({}, { leanDeg: 20 }), ref()).caveats).not.toContain('lean-differs');
+  });
+
+  it('adds a rest caveat when any rep skipped its rest', () => {
+    const reps = [...fiveOf().slice(0, 4), rep({}, { restSkipped: true })];
+    expect(compare(reps, ref()).caveats).toContain('rest-skipped');
+    expect(compare(fiveOf(), ref()).caveats).toEqual([]);
+  });
+});
+
+describe('buildReference', () => {
+  const five = (over: (i: number) => RepResult = () => rep()) => [0, 1, 2, 3, 4].map(over);
+  const peaks = (xs: number[], o: Parameters<typeof rep>[1] = {}) => xs.map((peakOverV) => rep({ peakOverV }, o));
+
+  it('rejects fewer than 3 usable reps as too-few', () => {
+    const bad: RepResult = { ok: false, reasons: ['not-still'], trace: trace() };
+    expect(buildReference([rep(), rep(), bad], 'sit-drop')).toEqual({ ok: false, reason: 'too-few' });
+  });
+
+  it('does not count a rep below the usable weight of 0.5', () => {
+    const r = buildReference([rep(), rep(), rep({}, { weight: 0.4 })], 'sit-drop');
+    expect(r).toEqual({ ok: false, reason: 'too-few' });
+  });
+
+  it('builds a reference from 3 usable reps', () => {
+    const r = buildReference([rep(), rep(), rep()], 'sit-drop');
+    expect(r.ok).toBe(true);
+  });
+
+  it('computes the median and the scaled MAD per feature, lean and impact speed', () => {
     const reps = five((i) => rep({ peakOverV: 18 + i }, { impactSpeed: 0.6 + 0.01 * i, leanDeg: 14 + i }));
     const r = buildReference(reps, 'sit-drop');
     if (!r.ok) throw new Error('expected ok');
     expect(r.ref.routine).toBe('sit-drop');
     expect(r.ref.repCount).toBe(5);
     expect(r.ref.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(r.ref.features.peakOverV.mean).toBeCloseTo(20);
-    expect(r.ref.features.peakOverV.std).toBeCloseTo(Math.sqrt(2.5));
-    expect(r.ref.features.stopTime.std).toBeCloseTo(0);
-    expect(r.ref.leanDeg.mean).toBeCloseTo(16);
-    expect(r.ref.impactSpeed.mean).toBeCloseTo(0.62);
+    expect(r.ref.features.peakOverV.median).toBeCloseTo(20);
+    expect(r.ref.features.peakOverV.mad).toBeCloseTo(1.4826);
+    expect(r.ref.features.stopTime.mad).toBeCloseTo(0);
+    expect(r.ref.leanDeg.median).toBeCloseTo(16);
+    expect(r.ref.impactSpeed.median).toBeCloseTo(0.62);
   });
 
-  it('rejects impact-speed CV above 20% as speed-spread, worst outlier first', () => {
-    const speeds = [0.6, 0.6, 0.2, 0.6, 1.1];
-    const r = buildReference(five((i) => rep({}, { impactSpeed: speeds[i]! })), 'sit-drop');
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.reason).toBe('speed-spread');
-    expect(r.outliers[0]).toBe(4);
-    expect(r.outliers[1]).toBe(2);
+  it('weights the median by rep weight', () => {
+    const reps = [rep({ peakOverV: 10 }), rep({ peakOverV: 20 }), rep({ peakOverV: 30 }, { weight: 1 })];
+    const even = buildReference(reps, 'sit-drop');
+    const heavy = buildReference([reps[0]!, reps[1]!, { ...(reps[2] as object), weight: 3 } as RepResult], 'sit-drop');
+    if (!even.ok || !heavy.ok) throw new Error('expected ok');
+    expect(even.ref.features.peakOverV.median).toBeCloseTo(20);
+    expect(heavy.ref.features.peakOverV.median).toBeCloseTo(30);
   });
 
-  it('rejects a lean range above 10 degrees as lean-spread, worst outlier first', () => {
-    const leans = [15, 15, 15, 15, 30];
-    const r = buildReference(five((i) => rep({}, { leanDeg: leans[i]! })), 'sit-drop');
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.reason).toBe('lean-spread');
-    expect(r.outliers[0]).toBe(4);
+  it('drops a far outlier by itself when 5 or more reps are usable', () => {
+    const r = buildReference(peaks([20, 20.2, 19.8, 20.1, 40]), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([4]);
+    expect(r.ref.repCount).toBe(4);
+    expect(r.ref.features.peakOverV.median).toBeCloseTo(20.05);
+  });
+
+  it('keeps every rep when fewer than 5 are usable', () => {
+    const r = buildReference(peaks([20, 20.2, 40]), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+    expect(r.ref.repCount).toBe(3);
+  });
+
+  it('never drops below 3 reps', () => {
+    const r = buildReference(peaks([20, 20, 20, 60, 90]), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.ref.repCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('reports dropped indexes into the input, counting rejected reps', () => {
+    const bad: RepResult = { ok: false, reasons: ['not-still'], trace: trace() };
+    const r = buildReference([bad, ...peaks([20, 20.2, 19.8, 20.1, 40])], 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([5]);
+  });
+
+  it('keeps reps of a dead-foam reference whose bounce ratio is near 0', () => {
+    const reps = [0, 0, 0.01, 0, 0.02].map((bounceRatio) => rep({ bounceRatio }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('stores the median hover jitter of the kept reps as the jitter scale', () => {
+    const reps = [0.1, 0.2, 0.3].map((hoverJitter) => rep({}, { hoverJitter }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.ref.jitterScale).toBeCloseTo(0.2);
+  });
+
+  it('accepts a wide spread of impact speed and lean without failing', () => {
+    const r = buildReference(five((i) => rep({}, { impactSpeed: 0.4 + 0.2 * i, leanDeg: 5 + 6 * i })), 'sit-drop');
+    expect(r.ok).toBe(true);
   });
 
   it('throws RangeError when a rep routine differs from the routine argument', () => {
     const reps = five((i) => rep({}, { routine: i === 3 ? 'bridge-drop' : 'sit-drop' }));
     expect(() => buildReference(reps, 'sit-drop')).toThrow(RangeError);
-  });
-
-  it('rejects a zero or negative mean impact speed as speed-spread', () => {
-    for (const s of [0, -0.6]) {
-      const r = buildReference(five(() => rep({}, { impactSpeed: s })), 'sit-drop');
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.reason).toBe('speed-spread');
-    }
-  });
-
-  it('accepts reps within 20% CV and 10 degrees', () => {
-    const r = buildReference(five((i) => rep({}, { impactSpeed: 0.5 + 0.05 * i, leanDeg: 10 + 2 * i })), 'sit-drop');
-    expect(r.ok).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import type { Coach } from '../../coach';
 import type { FeatureName, Routine } from '../../domain';
 import { createRepSession, rejectMessage } from '../../session';
 import type { RepSession, SessionEvent } from '../../session';
-import { buildReference, routineSpec } from '../../signal';
+import { buildReference, isUsable, routineSpec } from '../../signal';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 
@@ -30,8 +30,6 @@ const FEATURE_UNITS: Record<FeatureName, string> = {
 
 const BUILD_FAILURE = {
   'too-few': 'Too few accepted reps.',
-  'speed-spread': 'Your drop speed varied too much between reps.',
-  'lean-spread': 'Your lean varied too much between reps.',
 } as const;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
@@ -102,23 +100,23 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         else cueText.textContent = event.cue.text;
         getCoach().play(event.cue);
       } else if (event.kind === 'rep') {
-        if (event.result.ok) {
+        if (isUsable(event.result)) {
           dots[(session?.accepted ?? 1) - 1]?.setAttribute('data-state', 'accepted');
         } else {
           const item = document.createElement('li');
-          item.textContent = rejectMessage(event.result.reasons[0]!);
+          item.textContent = rejectMessage((event.result.ok ? event.result.issues : event.result.reasons)[0]!);
           rejectedList.append(item);
         }
       } else if (event.kind === 'done') {
         finish();
         const built = buildReference(event.reps, routine());
-        const accepted = event.reps.filter((r) => r.ok).length;
+        const accepted = event.reps.filter(isUsable).length;
         result.hidden = false;
         result.innerHTML = built.ok
           ? `<p>${accepted} accepted reps</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
               .map(
                 (name) =>
-                  `<div><dt>${name}</dt><dd>${built.ref.features[name].mean.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
+                  `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
               )
               .join('')}</dl>`
           : `<p>${accepted} accepted reps. ${BUILD_FAILURE[built.reason]}</p>`;
