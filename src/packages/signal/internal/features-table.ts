@@ -1,7 +1,6 @@
 import type { FeatureName, Routine } from '../../domain';
-import { DROP_MODELS } from './drop-model';
 import type { Axis } from './drop-model';
-import { dropModelOf } from './routine';
+import { DROP_MODELS, dropModelOf } from './routine';
 
 /**
  * One row per feature. `sign` is +1 when a higher value means firmer (hardness) or springier (springiness).
