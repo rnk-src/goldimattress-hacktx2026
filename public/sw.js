@@ -47,7 +47,8 @@ self.addEventListener('fetch', (event) => {
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   const stored = (await cache.match(request)) ?? (await cache.match(shellUrl()));
-  const network = fetch(request).then(async (response) => {
+  // 'no-cache' revalidates with the server: GitHub Pages lets browsers keep a page for ten minutes, which showed an old deploy.
+  const network = fetch(request.url, { cache: 'no-cache' }).then(async (response) => {
     if (response.ok) await cache.put(request, response.clone());
     return response;
   });

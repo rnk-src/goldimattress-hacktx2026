@@ -286,7 +286,7 @@ describe('startApp', () => {
       return parseRecording(JSON.parse(await exported[0]!.text())).traces;
     }
 
-    it('shows no score, and says why, when the capture holds no valid drop', async () => {
+    function mountRaw() {
       vi.useFakeTimers();
       const root = document.createElement('main');
       document.body.append(root);
@@ -299,15 +299,40 @@ describe('startApp', () => {
         device: 'Replay phone',
         newId: () => 'test-id',
       });
+      return root;
+    }
+    const finish = () => vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+
+    it('opens on the rig routine and shows the score section with its placeholder before any recording', () => {
+      const root = mountRaw();
+
+      expect(root.querySelector<HTMLSelectElement>('[name="routine"]')?.value).toBe('rig-drop');
+      expect(root.querySelector('[data-hardness-score]')?.textContent).toBe('Hardness score: -- / 100');
+      expect(root.querySelector('[data-springiness-score]')?.textContent).toBe('Springiness score: -- / 100');
+      expect(root.querySelector('[data-score-quality]')?.textContent).toContain('waiting for a recording');
+    });
+
+    it('shows N/A and why, never a number, when the capture holds no usable impact', async () => {
+      const root = mountRaw();
+      root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+      await finish();
+
+      const hardness = root.querySelector('[data-hardness-score]')?.textContent ?? '';
+      expect(hardness).toMatch(/^Hardness score: N\/A/);
+      expect(hardness).toContain('usable impact');
+      expect(root.querySelector('[data-springiness-score]')?.textContent).toBe('Springiness score: N/A');
+      expect(root.querySelector('[data-score-disclaimer]')?.textContent?.toLowerCase()).toContain('experimental');
+    });
+
+    it('says scores are for the rig when the legacy sit-drop was captured', async () => {
+      const root = mountRaw();
       const routine = root.querySelector<HTMLSelectElement>('[name="routine"]')!;
-      routine.value = 'rig-drop';
+      routine.value = 'sit-drop';
       routine.dispatchEvent(new Event('change'));
       root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
-      await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+      await finish();
 
-      expect(root.querySelector('[data-hardness-score]')?.textContent).toBe('Hardness score: not available');
-      expect(root.querySelector('[data-springiness-score]')?.textContent).toBe('Springiness score: not available');
-      expect(root.querySelector('[data-score-disclaimer]')?.textContent?.toLowerCase()).toContain('experimental');
+      expect(root.querySelector('[data-hardness-score]')?.textContent).toContain('choose Rig drop');
     });
 
     it('records the default rig on each rig-drop trace', async () => {
@@ -729,6 +754,12 @@ describe('raw capture countdown and timing', () => {
       device: 'Replay phone',
       newId: () => 'test-id',
     });
+    // The body tests below are about the legacy sit-drop; the page itself opens on the rig.
+    const picker = root.querySelector<HTMLSelectElement>('[name="routine"]');
+    if (picker) {
+      picker.value = 'sit-drop';
+      picker.dispatchEvent(new Event('change'));
+    }
     const set = (name: string, value: string) => {
       const input = root.querySelector<HTMLInputElement>(`[name="${name}"]`);
       if (input) input.value = value;

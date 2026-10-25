@@ -1,8 +1,12 @@
 import type { RigScoreSummary, Trace } from '../../domain';
 import { DEFAULT_RIG, GRAVITY, analyzeRep, isUsable } from '../../signal';
 
-/** Fewest valid drops that give a score. */
-const MIN_VALID_DROPS = 3;
+/** Valid drops from which the reading stops being provisional. */
+const FIRM_DROPS = 3;
+/** The window around the impact in which a gap in the samples spoils a drop, s. */
+const IMPACT_WINDOW_S = { before: 0.3, after: 0.6 };
+/** A gap shorter than this is ordinary timer jitter, whatever the sample rate. */
+const MIN_GAP_S = 0.1;
 /** A sample interval this many times the median one is a gap in the sensor stream. */
 const GAP_FACTOR = 3;
 /** This many equal readings in a row at the top of a peak, above CLIP_MIN_G, look like a clipped sensor. */
@@ -21,14 +25,14 @@ const HARDNESS_ANCHORS = { soft: 10, hard: 200 };
 const REPEATABLE_PCT = { high: 5, medium: 15 };
 
 export interface RigScores {
-  /** 0 to 100, relative. Null with fewer than three valid drops. */
+  /** 0 to 100, relative. Null only when no drop has a usable impact. */
   hardness: number | null;
   /** 0 to 100, from the bounce ratio. Null unless most valid drops show a rebound. */
   springiness: number | null;
   validDrops: number;
   totalDrops: number;
-  /** high: five valid drops within 5%; medium: three or more within 15%; low: more spread than that. */
-  confidence: 'high' | 'medium' | 'low' | 'insufficient';
+  /** high: five valid drops within 5%; medium: three or more within 15%; provisional: fewer than three valid drops; low: more spread than that, or a possibly clipped peak. */
+  confidence: 'high' | 'medium' | 'low' | 'provisional' | 'insufficient';
   /** Scaled MAD of the height-normalised peak over its median, percent. Null with no valid drop. */
   spreadPct: number | null;
   /** Median of the valid drops' peak in g, and of the height-normalised peak in 1/s, as measured. */
@@ -53,15 +57,20 @@ const median = (xs: readonly number[]): number => {
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 };
 
-/** A gap in the samples, or null when the trace is evenly sampled. */
-function hasGap(trace: Trace): boolean {
-  const dts = trace.samples.slice(1).map((s, i) => s.t - trace.samples[i]!.t);
+/** A gap in the samples around the impact. A gap elsewhere (the hover, the rest) does not touch the measurement. */
+function gapInImpactWindow(trace: Trace): boolean {
+  const { samples } = trace;
+  const dts = samples.slice(1).map((s, i) => s.t - samples[i]!.t);
   if (dts.length === 0) return false;
-  const typical = median(dts);
-  return dts.some((dt) => dt > GAP_FACTOR * typical);
+  const limit = Math.max(GAP_FACTOR * median(dts), MIN_GAP_S);
+  const mags = samples.map((s) => Math.hypot(s.ax, s.ay, s.az));
+  const peakAt = samples[mags.indexOf(Math.max(...mags))]!.t;
+  const from = peakAt - IMPACT_WINDOW_S.before;
+  const to = peakAt + IMPACT_WINDOW_S.after;
+  return dts.some((dt, i) => dt > limit && samples[i]!.t < to && samples[i + 1]!.t > from);
 }
 
-/** A flat top at a high reading: the sensor probably hit its limit, so the real peak is higher than recorded. */
+/** A flat top at a high reading: the sensor may have hit its limit, so the real peak may be higher than recorded. Only a warning. */
 function looksClipped(trace: Trace): boolean {
   const mags = trace.samples.map((s) => Math.hypot(s.ax, s.ay, s.az));
   const top = Math.max(...mags);
@@ -92,18 +101,13 @@ const hardnessScore = (omega: number): number =>
  */
 export function scoreRigDrops(traces: readonly Trace[]): RigScores {
   const notes: string[] = [];
-  const valid: { omega: number; peakG: number; peakOverV: number; bounce: number; measuredCm?: number; measuredUsed: boolean }[] = [];
+  const valid: { omega: number; peakG: number; peakOverV: number; bounce: number; measuredCm?: number; measuredUsed: boolean; clipped: boolean }[] = [];
   let gaps = 0;
-  let clipped = 0;
   const rejected = new Map<string, number>();
 
   for (const trace of traces) {
-    if (hasGap(trace)) {
+    if (gapInImpactWindow(trace)) {
       gaps += 1;
-      continue;
-    }
-    if (looksClipped(trace)) {
-      clipped += 1;
       continue;
     }
     const rep = analyzeRep(trace);
@@ -124,12 +128,12 @@ export function scoreRigDrops(traces: readonly Trace[]): RigScores {
       peakOverV: rep.features.peakOverV,
       bounce: rep.features.bounceRatio,
       measuredUsed,
+      clipped: looksClipped(trace),
       ...(measuredCm !== undefined && { measuredCm }),
     });
   }
 
-  if (gaps > 0) notes.push(`${gaps} ${gaps === 1 ? 'drop' : 'drops'} left out: gap in the sensor samples.`);
-  if (clipped > 0) notes.push(`${clipped} ${clipped === 1 ? 'drop' : 'drops'} left out: peak looks clipped by the sensor.`);
+  if (gaps > 0) notes.push(`${gaps} ${gaps === 1 ? 'drop' : 'drops'} left out: gap in the sensor samples around the impact.`);
   for (const [reason, count] of rejected) notes.push(`${count} ${count === 1 ? 'drop' : 'drops'} left out: ${reason}.`);
 
   const report: RigScores = {
@@ -148,7 +152,7 @@ export function scoreRigDrops(traces: readonly Trace[]): RigScores {
     disclaimer: SCORE_DISCLAIMER,
   };
   if (valid.length === 0) {
-    notes.push('No valid drop, so there is no score.');
+    notes.push(traces.length === 0 ? 'No drop was recorded, so there is no score.' : 'No usable impact was detected in any drop, so there is no score.');
     return report;
   }
 
@@ -161,28 +165,34 @@ export function scoreRigDrops(traces: readonly Trace[]): RigScores {
   if (measured.length > 0) report.measuredHeightCm = median(measured);
   report.heightSource = valid.filter((v) => v.measuredUsed).length * 2 > valid.length ? 'measured' : 'configured';
 
-  if (valid.length < MIN_VALID_DROPS) {
-    notes.push(`Only ${valid.length} valid ${valid.length === 1 ? 'drop' : 'drops'}; at least ${MIN_VALID_DROPS} are needed for a score.`);
-    return report;
-  }
-
   report.hardness = Math.round(hardnessScore(centre) * 10) / 10;
   const rebounds = valid.filter((v) => v.bounce > 0);
-  if (rebounds.length >= 2 && rebounds.length * 2 >= valid.length) {
+  if (rebounds.length >= 1 && rebounds.length * 2 >= valid.length) {
     report.medianBounceRatio = median(rebounds.map((v) => v.bounce));
     report.springiness = Math.round(clamp(report.medianBounceRatio, 0, 1) * 1000) / 10;
   } else {
     notes.push('No clear rebound in most drops, so there is no springiness score.');
   }
+  const clippedDrops = valid.filter((v) => v.clipped).length;
+  if (clippedDrops > 0) notes.push(`${clippedDrops} ${clippedDrops === 1 ? 'drop has' : 'drops have'} a flat peak: the sensor may have clipped it, so the hardness may read low.`);
+  if (valid.length < FIRM_DROPS) notes.push(`Only ${valid.length} valid ${valid.length === 1 ? 'drop' : 'drops'}: the scores are provisional until ${FIRM_DROPS} are valid.`);
   report.confidence =
-    valid.length >= 5 && report.spreadPct <= REPEATABLE_PCT.high ? 'high' : report.spreadPct <= REPEATABLE_PCT.medium ? 'medium' : 'low';
+    clippedDrops > 0
+      ? 'low'
+      : valid.length < FIRM_DROPS
+        ? 'provisional'
+        : valid.length >= 5 && report.spreadPct <= REPEATABLE_PCT.high
+          ? 'high'
+          : report.spreadPct <= REPEATABLE_PCT.medium
+            ? 'medium'
+            : 'low';
   return report;
 }
 
-/** Text for the confidence line, with the repeatability behind it. */
+/** Text for the quality line, with the repeatability behind it. */
 export function confidenceLine(report: RigScores): string {
-  if (report.confidence === 'insufficient') return 'Measurement quality: not enough valid drops';
-  const spread = report.spreadPct === null ? '' : `, spread ${report.spreadPct.toFixed(1)}%`;
+  if (report.confidence === 'insufficient') return 'Measurement quality: n/a (no usable drop)';
+  const spread = report.spreadPct === null || report.validDrops < 2 ? '' : `, spread ${report.spreadPct.toFixed(1)}%`;
   return `Measurement quality: ${report.confidence} (${report.validDrops} of ${report.totalDrops} drops valid${spread})`;
 }
 
@@ -208,20 +218,30 @@ export function scoreNote(report: RigScores): string {
   return `Experimental relative scores (not calibrated): ${part('hardness', report.hardness)}, ${part('springiness', report.springiness)}; ${confidenceLine(report)}.`;
 }
 
-/** The score block for a screen: the numbers when there are some, why not when there are none, and the label. */
-export function scoresHtml(report: RigScores): string {
+/** The score block for a screen. Without a report it is the placeholder shown before anything is recorded. */
+export function scoresHtml(report?: RigScores): string {
+  if (!report) {
+    return `
+    <section data-scores aria-label="Experimental scores">
+      <p data-hardness-score>Hardness score: -- / 100</p>
+      <p data-springiness-score>Springiness score: -- / 100</p>
+      <p data-score-quality>Measurement quality: waiting for a recording</p>
+      <p data-score-disclaimer>${SCORE_DISCLAIMER}</p>
+    </section>`;
+  }
+  const why = report.notes.length > 0 ? ` (${report.notes[report.notes.length - 1]})` : '';
   const hardness =
     report.hardness === null
-      ? 'Hardness score: not available'
+      ? `Hardness score: N/A${why}`
       : `Hardness score: ${report.hardness.toFixed(0)} / 100 (higher is firmer)`;
   const springiness =
     report.springiness === null
-      ? 'Springiness score: not available'
+      ? 'Springiness score: N/A (no clear rebound was detected)'
       : `Springiness score: ${report.springiness.toFixed(0)} / 100 (higher is bouncier)`;
   return `
     <section data-scores aria-label="Experimental scores">
       <p data-hardness-score>${hardness}</p>
-      <p data-springiness-score>${springiness}</p>
+      <p data-springiness-score>${report.hardness === null ? 'Springiness score: N/A' : springiness}</p>
       <p data-score-quality>${confidenceLine(report)}</p>
       ${report.notes.length > 0 ? `<ul data-score-notes>${report.notes.map((n) => `<li>${n}</li>`).join('')}</ul>` : ''}
       <p data-score-disclaimer>${report.disclaimer}</p>

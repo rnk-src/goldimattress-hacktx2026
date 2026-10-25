@@ -136,6 +136,7 @@ function captureView(
           <p data-rep-label class="rep-label">Rep 1 of ${REPS}</p>
           <p data-countdown class="countdown"></p>
           <p data-capture-status class="cue-panel__text" role="status" aria-live="polite">Ready for ${REPS} repetitions.</p>
+          <div data-scores-slot aria-live="polite">${scoresHtml()}</div>
           <p data-phone-position data-state="idle" class="cue-panel__text" role="status" aria-live="polite">Phone angle appears here once the capture starts.</p>
           <ol class="repetition-rail" data-repetition-progress aria-label="Capture progress">
             ${Array.from({ length: REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span><span class="sr-only">Repetition ${i + 1}</span></li>`).join('')}
@@ -150,7 +151,7 @@ function captureView(
           <div class="field-grid">
             <label><span>Recording label</span><input name="label" value="Raw capture" maxlength="80" autocomplete="off"></label>
             <label><span>Surface</span><input name="surface" value="Unnamed surface" maxlength="80" autocomplete="off"></label>
-            <label><span>Routine</span><select name="routine"><option value="sit-drop">Sit-drop</option><option value="rig-drop">Rig drop</option></select></label>
+            <label><span>Routine</span><select name="routine"><option value="rig-drop">Rig drop</option><option value="sit-drop">Sit-drop (legacy)</option></select></label>
           </div>
           <div class="field-grid" data-rig hidden>
             <label><span>Rig mass with phone, kg</span><input name="massKg" type="number" inputmode="decimal" step="0.1" min="0.1" value="${DEFAULT_RIG.massKg}"></label>
@@ -159,7 +160,6 @@ function captureView(
           </div>
           <button class="button button--primary" type="button" data-action="start-capture">Start ${REPS}-rep capture</button>
           <div class="export-slot" data-export></div>
-          <div data-scores-slot></div>
         </section>
         <p class="capture-footnote">Keep this page visible until all ${REPS} markers are complete. Audio and on-screen cues occur together.</p>
       </main>
@@ -319,7 +319,11 @@ function captureView(
           traces,
           ...(report && { notes: scoreNote(report) }),
         };
-        if (scoresSlot) scoresSlot.innerHTML = report ? scoresHtml(report) : '';
+        if (scoresSlot) {
+          scoresSlot.innerHTML = report
+            ? scoresHtml(report)
+            : '<section data-scores><p data-hardness-score>Hardness score: N/A (scores are for rig drops: choose Rig drop)</p><p data-springiness-score>Springiness score: N/A</p></section>';
+        }
         const fileName = `goldimattress-recording-${fileNamePart(recording.label, 'raw-capture')}-${fileNamePart(recording.surface, 'unnamed-surface')}.json`;
         if (exportUrl) URL.revokeObjectURL(exportUrl);
         exportUrl = URL.createObjectURL(new Blob([serializeRecording(recording)], { type: 'application/json' }));
