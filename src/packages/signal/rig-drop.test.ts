@@ -57,6 +57,16 @@ describe('analyzeRep on a rig-drop', () => {
     expect(r.issues).toContain('tilted-landing');
   });
 
+  it('cannot tell the landing tilt without samples after the impact, so the weight is 0', () => {
+    const full = rig({ dropHeightCm: 10 });
+    const mags = full.samples.map((x) => Math.hypot(x.ax, x.ay, x.az));
+    const fall = mags.findIndex((m) => m < 4.9);
+    const impact = fall + mags.slice(fall).findIndex((m) => m > 9.81 + 1.5);
+    const r = usable(analyzeRep({ ...full, samples: full.samples.slice(0, impact + 1) }));
+    expect(r.weight).toBe(0);
+    expect(r.issues).toContain('tilted-landing');
+  });
+
   it('rejects a rep that leaves the surface again', () => {
     const r = analyzeRep(rig({ dropHeightCm: 10, failure: 'left-surface' }));
     expect(r.ok === false && r.reasons).toContain('left-surface');
