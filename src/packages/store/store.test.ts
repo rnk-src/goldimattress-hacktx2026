@@ -306,6 +306,7 @@ describe('schema versioning and bad data', () => {
     ['stats that are not an object', v2({ people: [withStats('x')] })],
     ['stats without leanDeg', v2({ people: [withStats({ ...goodStats, leanDeg: undefined })] })],
     ['stats without features', v2({ people: [withStats({ ...goodStats, features: undefined })] })],
+    ['features in the old mean and std shape', v2({ people: [withStats({ ...goodStats, features: { peakOverV: { mean: 1, std: 1 } } })] })],
     ['stats in the old mean and std shape', v2({ people: [withStats({ ...goodStats, leanDeg: { mean: 1, std: 1 } })] })],
     ['a v0 blob with a null person', JSON.stringify({ people: [null], surfaces: [], tests: [] })],
     ['a v0 blob with a person without references', JSON.stringify({ people: [{ id: 'p' }], surfaces: [], tests: [] })],
