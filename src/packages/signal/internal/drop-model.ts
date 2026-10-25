@@ -69,4 +69,14 @@ export interface DropModel {
   findDrop(trace: Trace, mags: readonly number[], ctx: DropContext): FoundDrop | RejectReason;
   /** The features that score each axis. A feature not listed is recorded only. */
   axes: Partial<Record<FeatureName, Axis>>;
+  /**
+   * Share of |μ_ref| below which a spread is treated as noise. The rig drops a fixed mass, so its repeats are tighter than a body's.
+   * shortcut: 5% for the rig and 8% for the body are starting values; tune the rig's on the plate-experiment spread.
+   */
+  relFloor: number;
+  /**
+   * True when the lean is signed: face-down reads 180 degrees. The body is sign-agnostic.
+   * shortcut: only the rig is signed, upgrade the body when a flipped phone must fail it too.
+   */
+  signedLean: boolean;
 }

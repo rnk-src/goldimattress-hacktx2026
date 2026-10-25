@@ -1,6 +1,6 @@
 import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
 import { featuresOf } from './features-table';
-import { relFloorOf } from './routine';
+import { profileOf } from './routine';
 import { summarize } from './summarize';
 import { scaledMad, weightedMedian } from './math';
 
@@ -52,7 +52,7 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   let kept = ok.filter((r) => r.weight >= USABLE_WEIGHT);
   if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
-  const relFloor = relFloorOf(routine);
+  const { relFloor } = profileOf(routine).model;
   const judged = judgedOf(routine);
   const dropped: OkRep[] = [];
   if (kept.length >= DROP_FROM_REPS) {
