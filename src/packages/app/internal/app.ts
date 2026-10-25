@@ -290,7 +290,7 @@ function captureView(
             sampleRateHz: (samples.length - 1) / (last.t - first.t),
             device: deps.device,
             startedAt,
-            samples,
+            samples: samples.map((sample) => ({ ...sample, t: sample.t - first.t })),
           });
         }
         const item = progress[repetition - 1];
