@@ -52,11 +52,12 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   let kept = ok.filter((r) => r.weight >= USABLE_WEIGHT);
   if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
+  const relFloor = relFloorOf(routine);
   const dropped: OkRep[] = [];
   if (kept.length >= DROP_FROM_REPS) {
     // Farthest first, one at a time, so a dropped rep stops skewing the median that judges the next.
     while (kept.length > MIN_REPS) {
-      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloorOf(routine)) }));
+      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloor) }));
       const worst = scored.reduce((a, b) => (b.score > a.score ? b : a));
       if (worst.score <= OUTLIER_MADS) break;
       dropped.push(worst.r);

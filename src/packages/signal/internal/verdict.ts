@@ -47,11 +47,12 @@ export function compare(
   const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
   const summary = summarize(usable);
+  const relFloor = relFloorOf(ref.routine);
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of FEATURES) {
     const { center: mu, mad } = ref.features[name];
-    const sigmaEff = Math.max(mad, floorFactor * Math.max(relFloorOf(ref.routine) * Math.abs(mu), absFloor));
+    const sigmaEff = Math.max(mad, floorFactor * Math.max(relFloor * Math.abs(mu), absFloor));
     const value = (summary.features[name].center - mu) / sigmaEff;
     z[name] = value;
     if (axis !== null) axes[axis].push(sign * value);
