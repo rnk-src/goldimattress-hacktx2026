@@ -3,23 +3,13 @@ import type { FeatureName, Person, Routine, Trace } from '../../domain';
 import { createRepSession, rejectMessage } from '../../session';
 import type { RepSession, SessionEvent } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
+import { PLACEMENT } from './placement';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 
 /** Accepted reps that finish a calibration. */
 // shortcut: one app-wide constant, not per routine, so change it here if a routine needs another count.
 const CALIBRATION_REPS = 5;
-
-const PLACEMENT: Record<Routine, { label: string; text: string }> = {
-  'sit-drop': {
-    label: 'Sit-drop: couches, chairs and cushions',
-    text: 'Hold the phone flat on your sternum, screen out, arms crossed over it. Stand with your back to the surface and squat to hover about 10 cm (a fist) above it. Lean forward naturally, hold still, relax your legs and drop.',
-  },
-  'bridge-drop': {
-    label: 'Bridge drop: mattresses',
-    text: 'Lie on your back in the middle of the bed. Hold the phone flat on your lower belly over the hip bones with both hands. Lift your hips about 10 cm, hold still, go limp and drop.',
-  },
-};
 
 const FEATURE_UNITS: Record<FeatureName, string> = {
   peakOverV: '1/s',
