@@ -186,13 +186,14 @@ function captureView(
   });
   button?.addEventListener('click', () => {
     const rigDrop = routine?.value === 'rig-drop';
-    // shortcut: a bad or empty field falls back to the default rig value, with no error shown; add validation if people mistype.
+    // shortcut: a bad or empty number falls back to the default rig value with no error shown; add validation if people mistype.
+    const positive = (name: string, fallback: number) => (Number(rigInput(name)) > 0 ? Number(rigInput(name)) : fallback);
     const rig: RigSetup | undefined = rigDrop
       ? {
-          massKg: Number(rigInput('massKg')) > 0 ? Number(rigInput('massKg')) : DEFAULT_RIG.massKg,
+          massKg: positive('massKg', DEFAULT_RIG.massKg),
           baseCm: [...DEFAULT_RIG.baseCm],
-          dropHeightCm: Number(rigInput('dropHeightCm')) > 0 ? Number(rigInput('dropHeightCm')) : DEFAULT_RIG.dropHeightCm,
-          spot: ['center', 'seat-middle', 'other'].includes(rigInput('spot')) ? (rigInput('spot') as RigSetup['spot']) : DEFAULT_RIG.spot,
+          dropHeightCm: positive('dropHeightCm', DEFAULT_RIG.dropHeightCm),
+          spot: rigInput('spot') as RigSetup['spot'],
         }
       : undefined;
     const traces: Trace[] = [];
