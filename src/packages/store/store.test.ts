@@ -121,6 +121,7 @@ describe('trace encoding', () => {
     leanDeg: 15,
     hoverJitter: 0.1,
     weight: 1,
+    issues: [],
     trace,
   });
   const rejected = (trace: Trace): RepResult => ({ ok: false, reasons: ['not-still'], trace });
@@ -205,6 +206,7 @@ describe('capacity', () => {
           leanDeg: 15,
           hoverJitter: 0.1,
           weight: 1,
+          issues: [],
           trace: synthRep({ seed: i * 10 + n }),
         }),
       ),

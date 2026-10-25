@@ -23,6 +23,7 @@ function rep(
     leanDeg: o.leanDeg ?? 15,
     hoverJitter: o.hoverJitter ?? 0.1,
     weight: o.weight ?? 1,
+    issues: [],
     trace: trace(o.routine),
   };
 }

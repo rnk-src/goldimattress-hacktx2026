@@ -62,6 +62,8 @@ export type RepResult =
       hoverJitter: number;
       /** Quality weight, 0..1. A rep is usable at 0.5 or more. */
       weight: number;
+      /** What lowered the weight, as the fix to show: lean, speed, hold still, relax. Empty at weight 1. */
+      issues: RejectReason[];
       /** Seconds the person rested before this rep. Set by the session, not by `analyzeRep`. Unset for the first rep. */
       restS?: number;
       /** True when the person skipped the rest. Set by the session. */
