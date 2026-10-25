@@ -36,6 +36,10 @@ export const SLOPPY: HumanProfile = {
   responseCv: 0.15,
 };
 
+/**
+ * Kinds of attempt. 'tilt', 'fast' and 'slow' are sloppy but the policy tolerates them (lean and speed are not scored against
+ * the reference), so they count as usable reps; about 20% of attempts are ones the policy drops or down-weights.
+ */
 export type AttemptKind = 'good' | 'sway' | 'caught' | 'tilt' | 'fast' | 'slow' | 'left' | 'no-drop';
 const BAD_KINDS: readonly AttemptKind[] = ['sway', 'caught', 'tilt', 'fast', 'slow', 'left', 'no-drop'];
 

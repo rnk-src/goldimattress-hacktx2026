@@ -76,7 +76,7 @@ Caveats:
 | Load | The user's body | Real body pressure with nothing to carry. A phone alone reads only the top layer. |
 | Routines | Sit-drop for seating, bridge drop for mattresses | The bridge drop tests where people sleep, not the edge. |
 | Phone placement | Sternum (sit-drop), lower belly over hip bones (bridge drop) | The phone must ride on the body part that drops. |
-| Posture | Natural lean, recorded at calibration, enforced ±5° | Natural and safe; the phone measures it so users need not. |
+| Posture | Natural lean, recorded on every rep, never enforced | Lean differs by surface (real sets: 2–12°, 22–29°, 27–44°), so matching the calibration lean is not possible; the phone measures it so users need not. |
 | Springiness | Bounce and damping while the load stays on the surface | Hardness alone cannot tell foam from springs. |
 | Sensor | `DeviceMotionEvent` behind `SensorSource` | Runs in any phone browser. A Bluetooth IMU can replace it later. |
 | Platform | Vanilla TS + Vite web app on GitHub Pages | No install, any phone, no laptop needed. |
@@ -102,11 +102,12 @@ The same person calibrates and tests, so the protocol must make the body act the
 ### Checks the app runs on every rep
 People are not perfect for five whole reps. The app scores each rep instead of passing or failing it. Provisional numbers are tuned with the human-error simulator and real data.
 - **Invalid (dropped, never scored)**: `no-drop-found`, `left-surface`, `low-sample-rate`, and no still hover (jitter above a high ceiling).
-- **Scored (weight 0 to 1)**: hover jitter, lean, impact speed and caught landing. Each lowers the weight smoothly. A rep with weight ≥ 0.5 is *usable*.
+- **Scored (weight 0 to 1)**: hover jitter and caught landing. Each lowers the weight smoothly. A rep with weight ≥ 0.5 is *usable*.
 - **Covariates**: record lean, impact speed, rest length and whether the rest was skipped on every rep.
 - **Jitter is per person**: the first 2 reps use a global prior. After that the scale is the median jitter of the person's valid reps. The reference stores it and tests reuse it.
-- **Lean is relative**: compare to the reference median lean, with a soft penalty beyond about ±10°. Lean differs by surface, so a difference becomes a verdict caveat, not a reject.
-- **Speed**: `peak_over_v` already divides by speed. A large mismatch with the reference lowers the weight only.
+- **Lean and speed are not scored against the reference.** They differ by surface, and a penalty made most reps on a new surface unusable. Calibration drops a rep whose lean or speed is far from the person's own other reps (the outlier rule below). A test median is robust to one odd rep. A lean difference from calibration becomes a verdict caveat.
+- **Speed**: `peak_over_v` already divides by speed.
+- **No lean coaching during the hover.** The user is not asked to match the calibration lean.
 - Every dropped or low-weight rep shows a short fix message ("lean a bit less", "hold still").
 
 ### Rep session rules
@@ -135,17 +136,17 @@ Features per rep:
 | `peak_over_v` = a_peak / v_impact | Hardness | higher = firmer |
 | `stop_time` (impact to first return to 1 g) | Hardness | shorter = firmer |
 | `bounce_ratio` = A₂/A₁ | Springiness | higher = springier |
-| `settle_time` (until within ±0.05 g of rest) | Springiness | longer = springier |
+| `settle_time` (until within ±0.05 g of rest) | none (reported only) | too noisy: breathing keeps it from settling, and it varied 1.5 to 2.9 s on one surface |
 
 Steps:
 1. Calibration stores each feature's quality-weighted median μ_ref and scaled MAD (1.4826 · MAD) over its usable reps.
-   - Auto-drop a rep more than 3 scaled MADs from the median, only when at least 5 reps are valid and never below 3. Show a note, not a redo request.
+   - Auto-drop a rep more than 3 scaled MADs from the median on a scored feature, lean or impact speed, only when at least 5 reps are valid and never below 3. Show a note, not a redo request.
    - A reference needs at least 3 usable reps.
 2. A test takes the same weighted median over its usable reps to get μ_test.
 3. Per feature: z = (μ_test − μ_ref) / σ_eff, where σ_eff = max(scaled MAD, 8% of μ_ref, absolute floor).
    - With 3 or 4 reference reps, multiply the floor by 1.5.
    - The floor stops very consistent users from getting imperceptible differences flagged. Tune 8% and 1.5 with real data and the simulator.
-4. Hardness score H = mean(z_peak_over_v, −z_stop_time). Springiness score S = mean(z_bounce_ratio, z_settle_time).
+4. Hardness score H = mean(z_peak_over_v, −z_stop_time). Springiness score S = z_bounce_ratio.
 5. Labels: |score| < 2 = just right / same bounce; 2–3 = "slightly"; > 3 = "much". The sign gives harder/softer and bouncier/deader.
 6. Match = 100 · e^(−(H² + S²) / 8). Examples: H = S = 0 → 100%; H = 2, S = 0 → 61%; H = S = 2 → 37%.
    - Until the multi-surface data fixes the hardness axis, the match uses S only and hardness shows "can't tell yet".
