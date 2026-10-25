@@ -585,6 +585,16 @@ describe('raw capture countdown and timing', () => {
     expect(cues.some((c) => c.key === 'phone-off')).toBe(true);
   });
 
+  it('does not cue the phone angle while the phone is being moved', async () => {
+    const shaky = leanTrace(70, 70, 0);
+    shaky.samples.forEach((s, i) => (s.ay += i % 2 === 0 ? 4 : -4));
+    const { root, start, cues } = mountCapture('', '', createReplaySource(shaky, { realtime: true }));
+    start();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(cues.some((c) => c.key === 'phone-off' || c.key === 'phone-ok')).toBe(false);
+    expect(root.querySelector('[data-phone-position]')?.getAttribute('data-state')).toBe('idle');
+  });
+
   it('counts down the get-ready period before the first window', async () => {
     const { root, countdown, start } = mountCapture();
     start();

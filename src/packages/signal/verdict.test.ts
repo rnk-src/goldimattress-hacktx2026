@@ -285,6 +285,13 @@ describe('buildReference', () => {
     expect(r.dropped).toEqual([4]);
   });
 
+  it('keeps a rep that leans 16 degrees more than the person usual lean, which is ordinary', () => {
+    const leans = [10, 10, 10, 10, 26];
+    const r = buildReference(leans.map((leanDeg) => rep({}, { leanDeg })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
   it('keeps reps that lean 27 to 44 degrees, as one person did on a chair', () => {
     const leans = [27, 28, 41, 42, 44];
     const r = buildReference(leans.map((leanDeg) => rep({}, { leanDeg })), 'sit-drop');

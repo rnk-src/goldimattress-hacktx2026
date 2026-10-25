@@ -27,8 +27,8 @@ const JUDGED: readonly { value: (r: OkRep) => number; absFloor: number }[] = [
     value: (r: OkRep) => r.features[name],
     absFloor,
   })),
-  // shortcut: floors of 5 degrees and 0.05 m/s are guesses from three real sets, tune with sloppy sets.
-  { value: (r) => r.leanDeg, absFloor: 5 },
+  // shortcut: floors of 10 degrees and 0.05 m/s are guesses from three real sets, tune with sloppy sets.
+  { value: (r) => r.leanDeg, absFloor: 10 },
   { value: (r) => r.impactSpeed, absFloor: 0.05 },
 ];
 

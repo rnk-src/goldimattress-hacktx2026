@@ -185,7 +185,10 @@ function captureView(
       recent.push(sample);
       while (recent[0]!.t < sample.t - POSITION_WINDOW_S) recent.shift();
       if (recent.length < POSITION_MIN_SAMPLES) return;
-      const angle = Math.round(assessHover(recent, 'sit-drop').leanDeg);
+      const hover = assessHover(recent, 'sit-drop');
+      // A phone being picked up or set down has no angle to judge.
+      if (!hover.still) return;
+      const angle = Math.round(hover.leanDeg);
       const placed = tracker.update(angle);
       if (position) {
         position.dataset.state = placed.off ? 'off' : 'ok';
