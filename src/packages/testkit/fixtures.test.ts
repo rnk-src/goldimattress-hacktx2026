@@ -30,6 +30,14 @@ describe('loadFixture', () => {
     expect(rec.traces.every((t) => t.samples[0]!.t === 0)).toBe(true);
   });
 
+  it.each(['hard-chair-set2', 'hard-chair-held-out-set1'])('reads %s as five sit-drops without the user agent', (name) => {
+    const rec = loadFixture(name);
+    expect(rec.traces).toHaveLength(5);
+    expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
+    expect(rec.traces.every((t) => !t.device.includes('Mozilla'))).toBe(true);
+    expect(rec.traces.every((t) => t.samples[0]!.t === 0)).toBe(true);
+  });
+
   it('names the fixture when it does not exist', () => {
     expect(() => loadFixture('no-such-fixture')).toThrow(/no-such-fixture/);
   });
