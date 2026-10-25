@@ -8,10 +8,22 @@ export interface Coach {
 }
 
 export interface CoachEnv {
-  audio: () => AudioContext;
+  audio?: () => AudioContext;
   speech?: SpeechSynthesis;
   wakeLock?: WakeLock;
   doc?: Document;
+}
+
+/** Whatever the browser offers; each part is left out where the browser lacks it. */
+function detectBrowserEnv(): CoachEnv {
+  const w = window as typeof window & { webkitAudioContext?: new () => AudioContext };
+  const Audio = w.AudioContext ?? w.webkitAudioContext;
+  return {
+    ...(Audio ? { audio: () => new Audio() } : {}),
+    ...(w.speechSynthesis ? { speech: w.speechSynthesis } : {}),
+    ...(navigator.wakeLock ? { wakeLock: navigator.wakeLock } : {}),
+    doc: document,
+  };
 }
 
 function scheduleTone(audio: AudioContext, frequency: number, startsAt: number, duration: number) {
@@ -47,15 +59,16 @@ function scheduleBeep(audio: AudioContext, pattern: NonNullable<Cue['beep']>) {
   }
 }
 
-export function createBrowserCoach(env?: CoachEnv): Coach {
-  const audio = env?.audio();
+export function createBrowserCoach(injected?: CoachEnv): Coach {
+  const env = injected ?? detectBrowserEnv();
+  const audio = env.audio?.();
   let muted = false;
   let keepAwakeRequested = false;
   let wakeSentinel: WakeLockSentinel | null = null;
   let acquiring = false;
 
   const acquireWakeLock = async () => {
-    if (!keepAwakeRequested || !env?.wakeLock || acquiring || (wakeSentinel && !wakeSentinel.released)) return;
+    if (!keepAwakeRequested || !env.wakeLock || acquiring || (wakeSentinel && !wakeSentinel.released)) return;
     acquiring = true;
     try {
       const sentinel = await env.wakeLock.request('screen');
@@ -69,14 +82,14 @@ export function createBrowserCoach(env?: CoachEnv): Coach {
     }
   };
   const onVisibilityChange = () => {
-    if (env?.doc?.visibilityState === 'visible') void acquireWakeLock();
+    if (env.doc?.visibilityState === 'visible') void acquireWakeLock();
   };
-  env?.doc?.addEventListener('visibilitychange', onVisibilityChange);
+  env.doc?.addEventListener('visibilitychange', onVisibilityChange);
 
   return {
     play(cue) {
       if (muted) return;
-      if (env?.speech) {
+      if (env.speech) {
         const utterance =
           typeof globalThis.SpeechSynthesisUtterance === 'function'
             ? new SpeechSynthesisUtterance(cue.text)
@@ -100,11 +113,11 @@ export function createBrowserCoach(env?: CoachEnv): Coach {
     },
     dispose() {
       keepAwakeRequested = false;
-      env?.doc?.removeEventListener('visibilitychange', onVisibilityChange);
+      env.doc?.removeEventListener('visibilitychange', onVisibilityChange);
       const held = wakeSentinel;
       wakeSentinel = null;
       void held?.release();
-      env?.speech?.cancel();
+      env.speech?.cancel();
       void audio?.close();
     },
   };

@@ -1,7 +1,6 @@
 import type { Sample, Trace } from '../../domain';
+import { createRateMeter } from './rate-meter';
 import type { SensorSource } from './source';
-
-const MIN_SAMPLES_FOR_RATE = 20;
 
 /**
  * Replays a recorded trace through the live `SensorSource` interface.
@@ -9,9 +8,7 @@ const MIN_SAMPLES_FOR_RATE = 20;
  */
 export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = {}): SensorSource {
   let timers: ReturnType<typeof setTimeout>[] = [];
-  let emitted = 0;
-  let firstT = 0;
-  let lastT = 0;
+  const meter = createRateMeter();
 
   const stop = () => {
     timers.forEach(clearTimeout);
@@ -19,9 +16,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
   };
 
   const emit = (s: Sample, onSample: (s: Sample) => void) => {
-    if (emitted === 0) firstT = s.t;
-    lastT = s.t;
-    emitted += 1;
+    meter.add(s.t);
     onSample(s);
   };
 
@@ -29,7 +24,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
     requestAccess: () => Promise.resolve('granted'),
     start(onSample) {
       stop();
-      emitted = 0;
+      meter.reset();
       const t0 = trace.samples[0]?.t ?? 0;
       for (const s of trace.samples) {
         const delayMs = (s.t - t0) * 1000;
@@ -39,8 +34,7 @@ export function createReplaySource(trace: Trace, opts: { realtime?: boolean } = 
     },
     stop,
     get sampleRateHz() {
-      if (emitted < MIN_SAMPLES_FOR_RATE || lastT <= firstT) return null;
-      return (emitted - 1) / (lastT - firstT);
+      return meter.hz;
     },
   };
 }

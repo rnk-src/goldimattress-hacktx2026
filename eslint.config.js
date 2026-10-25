@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
+import groups from './package-groups.cjs';
 
 const nonDomGlobals = { ...globals.es2021, ...globals.node };
 // Browser globals Node also defines. Pure packages must not use them either.
@@ -13,11 +14,11 @@ const domOnly = [
 ];
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', '.dependency-cruiser.cjs'] },
+  { ignores: ['dist', 'coverage', 'node_modules', '.dependency-cruiser.cjs', 'package-groups.cjs'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/packages/{domain,signal,session,listings}/**/*.ts'],
+    files: [`src/packages/{${groups.purePackages.join(',')}}/**/*.ts`],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-globals': [
