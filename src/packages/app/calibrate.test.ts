@@ -155,6 +155,12 @@ describe('calibrate screen', () => {
     expect(awake).toEqual([]);
   });
 
+  it('does not offer rig-drop, which needs a rig the calibrate screen cannot set', () => {
+    const { root } = mount(createReplaySource(traceOf([])));
+    const values = Array.from(root.querySelectorAll<HTMLOptionElement>('select[name="routine"] option'), (o) => o.value);
+    expect(values).toEqual(['sit-drop', 'bridge-drop']);
+  });
+
   it('shows the bridge-drop placement and rest time from the routine spec', () => {
     const { root } = mount(createReplaySource(traceOf([])));
     const select = root.querySelector<HTMLSelectElement>('select[name="routine"]');
