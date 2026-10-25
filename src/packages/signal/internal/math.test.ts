@@ -91,4 +91,14 @@ describe('weightedTrimmedMean guards', () => {
     expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [0, 0, 0, 0, 0], 0.2, 5)).toThrow(RangeError);
     expect(() => weightedTrimmedMean([1, 2], [0, 0], 0.2, 5)).toThrow(RangeError);
   });
+
+  it('throws when trim is 0.5 or more', () => {
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1, 1], 0.5, 5)).toThrow(RangeError);
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1, 1], 0.7, 5)).toThrow(RangeError);
+  });
+
+  it('throws when values and weights differ in length', () => {
+    expect(() => weightedTrimmedMean([1, 2, 3], [1, 1], 0.2, 5)).toThrow(RangeError);
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1], 0.2, 5)).toThrow(RangeError);
+  });
 });

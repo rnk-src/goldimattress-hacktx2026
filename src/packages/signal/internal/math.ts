@@ -76,8 +76,11 @@ export function smooth3(ys: readonly number[]): number[] {
 /**
  * Mean of `xs` after dropping the lowest and highest `trim` share of the total weight. A value on the cut line is split.
  * Falls back to the weighted median below `minReps` values.
+ * Throws RangeError on mismatched lengths, a `trim` outside [0, 0.5) or a total weight of 0.
  */
 export function weightedTrimmedMean(xs: readonly number[], ws: readonly number[], trim: number, minReps: number): number {
+  if (xs.length !== ws.length) throw new RangeError('xs and ws must have the same length');
+  if (!(trim >= 0 && trim < 0.5)) throw new RangeError('trim must be in [0, 0.5)');
   const total = ws.reduce((sum, w) => sum + w, 0);
   if (!(total > 0)) throw new RangeError('total weight must be positive');
   if (xs.length < minReps) return weightedMedian(xs, ws);
