@@ -3,6 +3,8 @@ import type { FeatureName, Person, Routine } from '../../domain';
 import { GOAL_REPS, MIN_REPS, rejectMessage } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
 import { PLACEMENT } from './placement';
+import { personRig, rigSummary } from './rig';
+import { routinePickerHtml, wireRoutinePicker } from './routines';
 import { createRepRun } from './rep-run';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
@@ -23,17 +25,13 @@ const droppedNote = (count: number): string =>
   count === 0 ? '' : `<p>dropped ${count} ${count === 1 ? 'rep' : 'reps'} that didn't match the others</p>`;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
-  // shortcut: rig-drop hidden until R7 adds the rig setup screen, remove then
   root.innerHTML = `
     <div class="app-shell">
       ${brandHeader('Calibrate')}
       <main class="app-main calibrate-view">
         <h1>Calibrate on a surface you like</h1>
-        <label>Routine
-          <select name="routine">
-            ${(Object.keys(PLACEMENT) as Routine[]).filter((r) => r !== 'rig-drop').map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
-          </select>
-        </label>
+        ${routinePickerHtml()}
+        <p data-rig-line></p>
         <label data-profile-control hidden>Profile
           <select name="person"></select>
         </label>
@@ -55,6 +53,8 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     </div>
   `;
   const routineSelect = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+  const legacyToggle = root.querySelector<HTMLInputElement>('input[name="legacy"]')!;
+  const rigLine = root.querySelector<HTMLElement>('[data-rig-line]')!;
   const profileControl = root.querySelector<HTMLElement>('[data-profile-control]')!;
   const profileSelect = root.querySelector<HTMLSelectElement>('select[name="person"]')!;
   const placement = root.querySelector<HTMLElement>('[data-placement]')!;
@@ -93,6 +93,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     }
     button.disabled = !selectedPerson;
     showExisting();
+    showRig();
   }).catch(() => {
     if (mounted) profilePrompt.textContent = 'Could not load profiles. Reload this page to try again.';
   });
@@ -101,6 +102,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     if (selectedPerson) profilePrompt.textContent = `Calibrating for ${selectedPerson.name}`;
     clearProgress();
     showExisting();
+    showRig();
   });
 
   const routine = () => routineSelect.value as Routine;
@@ -109,6 +111,14 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     existingNote.textContent = saved
       ? `A reference from ${saved.createdAt.slice(0, 10)} (${saved.repCount} reps) exists. Finishing will replace it.`
       : '';
+  };
+  const showRig = () => {
+    rigLine.replaceChildren();
+    if (routine() !== 'rig-drop') return;
+    const change = document.createElement('a');
+    change.href = '#/rig';
+    change.textContent = 'Change rig setup';
+    rigLine.append(`Rig: ${rigSummary(personRig(selectedPerson))}. `, change);
   };
   const showPlacement = () => {
     const spec = routineSpec(routine());
@@ -126,11 +136,15 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
   };
   showPlacement();
-  routineSelect.addEventListener('change', () => {
+  showRig();
+  const routineChanged = () => {
     showPlacement();
+    showRig();
     clearProgress();
     showExisting();
-  });
+  };
+  routineSelect.addEventListener('change', routineChanged);
+  wireRoutinePicker(routineSelect, legacyToggle, routineChanged);
 
   /** The routine and person a run was started for, so editing the form mid-run cannot change where it is saved. */
   let runRoutine: Routine = routine();
@@ -174,6 +188,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     finishButton.disabled = true;
     skipButton.hidden = true;
     routineSelect.disabled = false;
+    legacyToggle.disabled = false;
     profileSelect.disabled = false;
   };
 
@@ -233,9 +248,10 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     runRoutine = routine();
     button.disabled = true;
     routineSelect.disabled = true;
+    legacyToggle.disabled = true;
     profileSelect.disabled = true;
     clearProgress();
-    void run.start(runRoutine);
+    void run.start(runRoutine, undefined, runRoutine === 'rig-drop' ? personRig(runPerson) : undefined);
   });
   finishButton.addEventListener('click', () => run.finishNow());
   skipButton.addEventListener('click', () => run.skipRest());

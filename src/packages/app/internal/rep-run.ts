@@ -1,5 +1,5 @@
 import type { Coach } from '../../coach';
-import type { Cue, LiveState, ReferenceStats, RepResult, Routine, Trace } from '../../domain';
+import type { Cue, LiveState, ReferenceStats, RepResult, RigSetup, Routine, Trace } from '../../domain';
 import { createRepSession } from '../../session';
 import type { RepSession, SessionEvent, SessionOutcome } from '../../session';
 import { shortDeviceModel } from './metadata';
@@ -24,7 +24,7 @@ export interface RepRunHandlers {
 }
 
 export interface RepRun {
-  start(routine: Routine, ref?: ReferenceStats): Promise<void>;
+  start(routine: Routine, ref?: ReferenceStats, rig?: RigSetup): Promise<void>;
   finishNow(): void;
   skipRest(): void;
   readonly accepted: number;
@@ -86,7 +86,7 @@ export function createRepRun(deps: AppDeps, getCoach: () => Coach, handlers: Rep
   };
 
   return {
-    async start(routine, ref) {
+    async start(routine, ref, rig) {
       let access;
       try {
         access = await deps.source.requestAccess();
@@ -98,7 +98,7 @@ export function createRepRun(deps: AppDeps, getCoach: () => Coach, handlers: Rep
         handlers.onBlocked(BLOCKED_TEXT[access]);
         return;
       }
-      session = createRepSession(ref ? { routine, ref } : { routine });
+      session = createRepSession({ routine, ...(ref && { ref }), ...(rig && { rig }) });
       running = true;
       void getCoach().keepAwake(true);
       clockBase = undefined;
