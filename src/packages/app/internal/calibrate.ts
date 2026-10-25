@@ -25,7 +25,6 @@ const droppedNote = (count: number): string =>
   count === 0 ? '' : `<p>dropped ${count} ${count === 1 ? 'rep' : 'reps'} that didn't match the others</p>`;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
-  // shortcut: rig-drop hidden until R7 adds the rig setup screen, remove then
   root.innerHTML = `
     <div class="app-shell">
       ${brandHeader('Calibrate')}
