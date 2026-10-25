@@ -1,5 +1,5 @@
 import type { Coach } from '../../coach';
-import type { FeatureName, Person, Routine } from '../../domain';
+import type { FeatureName, Person, Routine, Trace } from '../../domain';
 import { createRepSession, rejectMessage } from '../../session';
 import type { RepSession, SessionEvent } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
@@ -57,7 +57,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
           ${Array.from({ length: CALIBRATION_REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span></li>`).join('')}
         </ol>
         <ul data-rejected-reps aria-label="Rejected reps"></ul>
-        <button class="button button--primary" type="button" data-action="start-calibration">Start calibration</button>
+        <button class="button button--primary" type="button" data-action="start-calibration" disabled>Start calibration</button>
         <button class="button button--quiet" type="button" data-action="finish-calibration" hidden disabled>Finish with 3 reps</button>
         <p data-profile-prompt role="status">Loading profiles…</p>
         <section data-calibration-result aria-label="Calibration result" hidden></section>
@@ -99,9 +99,11 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       profileControl.hidden = false;
       profilePrompt.textContent = `Calibrating for ${selectedPerson.name}`;
     } else {
-      button.disabled = true;
       profilePrompt.innerHTML = 'Create a profile before calibrating. <a href="#/profile">Create a profile</a>';
     }
+    button.disabled = !selectedPerson;
+  }).catch(() => {
+    if (mounted) profilePrompt.textContent = 'Could not load profiles. Reload this page to try again.';
   });
   profileSelect.addEventListener('change', () => {
     selectedPerson = profiles.find((person) => person.id === profileSelect.value);
@@ -120,6 +122,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     usableCount.textContent = '0 of 5 usable reps';
     finishButton.hidden = true;
     finishButton.disabled = true;
+    finishButton.textContent = 'Finish with 3 reps';
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
   };
   showPlacement();
@@ -139,6 +142,36 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     void getCoach().keepAwake(false);
   };
 
+  /** Wall-clock time of sample time 0, and the latest sample time, so each rep can be dated when it ends. */
+  let clockBase: number | undefined;
+  let latestT = 0;
+  /** When each rep started, in rep order. Traces are rebased per rep, so the start comes from the rep's end. */
+  let startedAts: string[] = [];
+  const startedAtOf = (trace: Trace): string => {
+    const first = trace.samples[0];
+    const last = trace.samples.at(-1);
+    const durationS = first && last ? last.t - first.t : 0;
+    return new Date((clockBase ?? deps.now().getTime()) + (latestT - durationS) * 1_000).toISOString();
+  };
+
+  /** Re-reads the person so only this routine changes, then reports the real outcome. */
+  const saveReference = async (
+    personId: string,
+    currentRoutine: Routine,
+    reference: NonNullable<Person['references'][Routine]>,
+  ) => {
+    let message = 'Reference saved.';
+    try {
+      const fresh = (await deps.store.listPeople()).find((person) => person.id === personId);
+      if (!fresh) throw new Error('profile missing');
+      await deps.store.savePerson({ ...fresh, references: { ...fresh.references, [currentRoutine]: reference } });
+    } catch (error) {
+      message = `Could not save: ${error instanceof Error ? error.message : 'unknown error'}. Calibration not stored.`;
+    }
+    const status = root.querySelector('[data-save-status]');
+    if (mounted && status) status.textContent = message;
+  };
+
   const show = (events: SessionEvent[]) => {
     for (const event of events) {
       if (event.kind === 'cue') {
@@ -146,14 +179,16 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         if (event.cue.key === 'rep-accepted' || event.cue.key === 'rep-rejected') feedback.textContent = event.cue.text;
         else cueText.textContent = event.cue.text;
         getCoach().play(event.cue);
+      } else if (event.kind === 'state') {
+        finishButton.disabled = session === undefined || session.accepted < 3 || event.state === 'capturing' || event.state === 'done';
       } else if (event.kind === 'rep') {
+        startedAts.push(startedAtOf(event.result.trace));
         if (isUsable(event.result)) {
           dots[(session?.accepted ?? 1) - 1]?.setAttribute('data-state', 'accepted');
           usableCount.textContent = `${session?.accepted ?? 0} of 5 usable reps`;
-          if ((session?.accepted ?? 0) >= 3) {
-            finishButton.hidden = false;
-            finishButton.disabled = false;
-          }
+          finishButton.textContent = `Finish with ${session?.accepted ?? 0} reps`;
+          finishButton.disabled = (session?.accepted ?? 0) < 3 || session?.state === 'capturing';
+          if ((session?.accepted ?? 0) >= 3) finishButton.hidden = false;
         } else {
           const item = document.createElement('li');
           item.textContent = rejectMessage((event.result.ok ? event.result.issues : event.result.reasons)[0]!);
@@ -163,18 +198,17 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         finish();
         const built = buildReference(event.reps, routine());
         const accepted = event.reps.filter(isUsable).length;
+        const saveStatus = built.ok && selectedPerson ? 'Saving…' : '';
         if (built.ok && selectedPerson) {
-          const person = selectedPerson;
-          const currentRoutine = routine();
-          person.references[currentRoutine] = {
+          const reference = {
             stats: { ...built.ref, createdAt: deps.now().toISOString() },
-            reps: event.reps,
+            reps: event.reps.map((rep, i) => ({ ...rep, trace: { ...rep.trace, startedAt: startedAts[i] ?? rep.trace.startedAt } })),
           };
-          void deps.store.savePerson(person);
+          void saveReference(selectedPerson.id, routine(), reference);
         }
         result.hidden = false;
         result.innerHTML = built.ok
-          ? `<p>${accepted} accepted reps${event.outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<dl>${(Object.keys(built.ref.features) as FeatureName[])
+          ? `<p>${accepted} accepted reps${event.outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<p data-save-status role="status">${saveStatus}</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
               .map(
                 (name) =>
                   `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
@@ -186,6 +220,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   };
 
   button.addEventListener('click', async () => {
+    if (!selectedPerson) return;
     button.disabled = true;
     const coach = getCoach();
     let access;
@@ -209,7 +244,13 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     session = createRepSession({ routine: routine() });
     running = true;
     void coach.keepAwake(true);
-    deps.source.start((sample) => show(session!.push(sample)));
+    clockBase = undefined;
+    startedAts = [];
+    deps.source.start((sample) => {
+      clockBase ??= deps.now().getTime() - sample.t * 1_000;
+      latestT = sample.t;
+      show(session!.push(sample));
+    });
   });
 
   finishButton.addEventListener('click', () => {

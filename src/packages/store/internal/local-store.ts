@@ -35,7 +35,13 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
   const load = (): StoredData => readStored(storage.getItem(KEY));
   const save = (data: StoredData, corruptBackup?: string) => {
     try {
-      if (corruptBackup !== undefined) storage.setItem(CORRUPT_BACKUP_KEY, corruptBackup);
+      if (corruptBackup !== undefined) {
+        try {
+          storage.setItem(CORRUPT_BACKUP_KEY, corruptBackup);
+        } catch {
+          // The backup is a courtesy; a full quota must not also block the save that repairs the store.
+        }
+      }
       storage.setItem(KEY, JSON.stringify(data));
     } catch (e) {
       throw isQuotaError(e) ? new StoreFullError({ cause: e }) : e;

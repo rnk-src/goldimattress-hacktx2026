@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Coach } from '../coach';
-import type { Cue, Person, Routine, Sample, Trace } from '../domain';
+import type { Cue, FeatureStats, Person, ReferenceStats, Routine, Sample, Trace } from '../domain';
 import { createReplaySource } from '../sensors';
 import type { SensorSource } from '../sensors';
 import { rejectMessage } from '../session';
@@ -17,6 +17,17 @@ afterEach(() => {
 });
 
 const REST_S = 22;
+
+const stat = (median: number): FeatureStats => ({ median, mad: median / 10 });
+const bridgeStats = (): ReferenceStats => ({
+  routine: 'bridge-drop',
+  repCount: 5,
+  createdAt: '2026-10-24T16:00:00.000Z',
+  features: { peakOverV: stat(10), stopTime: stat(0.2), bounceRatio: stat(0.4), settleTime: stat(1.5) },
+  leanDeg: stat(10),
+  impactSpeed: stat(0.6),
+  jitterScale: 0.1,
+});
 
 function traceOf(samples: Sample[], routine: Routine = 'sit-drop'): Trace {
   return { routine, sampleRateHz: 60, device: 'Replay phone', startedAt: '2026-10-24T16:00:00.000Z', samples };
@@ -185,10 +196,109 @@ describe('calibrate screen', () => {
     const { root } = mount(createReplaySource(traceOf(goodStream([]))));
     expect(root.querySelector('[data-usable-count]')?.textContent).toBe('0 of 5 usable reps');
 
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     await flush();
 
     expect(root.querySelector('[data-usable-count]')?.textContent).toBe('5 of 5 usable reps');
+  });
+
+  it('says the reference was saved only after the store accepted it', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    expect(root.querySelector('[data-save-status]')?.textContent).toBe('Reference saved.');
+  });
+
+  it('tells the user when the reference could not be saved', async () => {
+    const base = createLocalStore(memoryStorage());
+    await base.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const store: Store = { ...base, savePerson: () => Promise.reject(new Error('Storage is full')) };
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const status = root.querySelector('[data-save-status]')?.textContent ?? '';
+    expect(status).toContain('Could not save');
+    expect(status).not.toContain('Reference saved');
+  });
+
+  it('keeps Start disabled until the profiles have loaded', async () => {
+    const base = createLocalStore(memoryStorage());
+    await base.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const store: Store = { ...base, listPeople: async () => (await gate, base.listPeople()) };
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    const start = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
+
+    expect(start.disabled).toBe(true);
+    release();
+    await flush();
+
+    expect(start.disabled).toBe(false);
+  });
+
+  it('shows an error and keeps Start disabled when the profiles cannot load', async () => {
+    const base = createLocalStore(memoryStorage());
+    const store: Store = { ...base, listPeople: () => Promise.reject(new Error('storage unavailable')) };
+    const { root } = mount(createReplaySource(traceOf([])), '#/calibrate', store);
+    await flush();
+
+    expect(root.querySelector('[data-profile-prompt]')?.textContent).toContain('Could not load profiles');
+    expect(root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.disabled).toBe(true);
+  });
+
+  it('saves only its own routine and keeps what another tab saved meanwhile', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+    const [stale] = await store.listPeople();
+    const other = { stats: bridgeStats(), reps: [] };
+    await store.savePerson({ ...stale!, references: { 'bridge-drop': other } });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    expect(saved?.references['sit-drop']?.stats.repCount).toBe(5);
+    expect(saved?.references['bridge-drop']).toBeDefined();
+  });
+
+  it('stamps each saved rep with when that rep started', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    const stamps = saved?.references['sit-drop']?.reps.map((rep) => rep.trace.startedAt) ?? [];
+    expect(new Set(stamps).size).toBe(stamps.length);
+    expect(stamps).toEqual([...stamps].sort());
+  });
+
+  it('labels the finish button with the usable reps so far', async () => {
+    const samples = synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }, { seed: 4 }], REST_S);
+    const last = samples.at(-1)!;
+    for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
+    const { root } = mount(createReplaySource(traceOf(samples)));
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    expect(root.querySelector('[data-action="finish-calibration"]')?.textContent).toBe('Finish with 4 reps');
   });
 
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
@@ -196,6 +306,7 @@ describe('calibrate screen', () => {
     expect(root.textContent).toContain('sternum');
     expect(root.querySelectorAll('[data-rep-dots] li')).toHaveLength(5);
 
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     await flush();
 
@@ -227,6 +338,7 @@ describe('calibrate screen', () => {
   it('keeps the fix for a rejected rep visible next to the rest cue', async () => {
     const stream = goodStream([{ failure: 'caught-landing' }]).slice(0, 420);
     const { root } = mount(createReplaySource(traceOf(stream)));
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     await flush();
     expect(root.querySelector('[data-rep-feedback]')?.textContent).toContain(rejectMessage('caught-landing'));
@@ -236,6 +348,7 @@ describe('calibrate screen', () => {
   it('shows the fix for a rejected rep and does not fill a dot for it', async () => {
     const stream = goodStream([{ failure: 'caught-landing' }]);
     const { root } = mount(createReplaySource(traceOf(stream)));
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     await flush();
 
@@ -253,6 +366,7 @@ describe('calibrate screen', () => {
       sampleRateHz: null,
     };
     const { root } = mount(source);
+    await flush();
     const start = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]');
     start?.click();
     await flush();
@@ -272,6 +386,7 @@ describe('calibrate screen', () => {
       sampleRateHz: null,
     };
     const { root, awake } = mount(source);
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     window.location.hash = '#/permission';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -305,6 +420,7 @@ describe('calibrate screen', () => {
       sampleRateHz: null,
     };
     const { root, awake } = mount(source);
+    await flush();
     root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
     await flush();
     expect(awake).toEqual([true]);
