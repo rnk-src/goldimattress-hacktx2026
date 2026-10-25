@@ -1,6 +1,6 @@
 import type { HoverAssessment, RejectReason, Routine, Sample } from '../../domain';
 import { GRAVITY } from './constants';
-import { magnitude, std } from './math';
+import { clamp, magnitude, meanVector, std } from './math';
 import { profileOf } from './routine';
 
 /** A hover must read about 1 g, so a window of zeros or free fall is not a hover, m/s². */
@@ -26,13 +26,12 @@ const COVERAGE_TOL_S = 0.002;
 /** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign unless the routine's model signs the lean. */
 function leanOf(window: readonly Sample[], routine: Routine): number {
   if (window.length === 0) return 0;
-  const mean = (key: 'ax' | 'ay' | 'az') => window.reduce((sum, s) => sum + s[key], 0) / window.length;
-  const m = { ax: mean('ax'), ay: mean('ay'), az: mean('az') };
+  const m = meanVector(window);
   const length = magnitude(m);
   const { leanAxis, model } = profileOf(routine);
   const along = m[leanAxis];
   const cos = model.signedLean ? along : Math.abs(along);
-  const deg = (Math.acos(Math.max(-1, Math.min(1, cos / length))) * 180) / Math.PI;
+  const deg = (Math.acos(clamp(cos / length, -1, 1)) * 180) / Math.PI;
   // Zero or non-finite samples have no direction, so the lean is 0.
   return Number.isFinite(deg) ? deg : 0;
 }

@@ -1,8 +1,9 @@
-import type { RejectReason, Sample, Trace } from '../../domain';
+import type { RejectReason, Trace } from '../../domain';
 import { FALL_ACCEL, GRAVITY } from './constants';
 import { firstPeakAfter, hoverFromOf, lowRuns, riseStart } from './drop-model';
 import type { DropModel, Segments } from './drop-model';
 import { DEFAULT_RIG } from './rig';
+import { clamp, magnitude, meanVector } from './math';
 import { combine, factor, jitterScore, ramp } from './score';
 
 /** Fewest samples in a free fall. A 5 cm fall is about 6 samples at 57 Hz. */
@@ -36,22 +37,15 @@ function freeFallDrop(trace: Trace, mags: readonly number[], hoverMinS: number):
   return 'no-drop-found';
 }
 
-/** Mean gravity direction of `samples`, as a unit vector, or null when empty or zero. */
-function meanDirection(samples: readonly Sample[]): [number, number, number] | null {
-  const sum = samples.reduce<[number, number, number]>((a, s) => [a[0] + s.ax, a[1] + s.ay, a[2] + s.az], [0, 0, 0]);
-  const length = Math.hypot(...sum);
-  return length > 0 ? [sum[0] / length, sum[1] / length, sum[2] / length] : null;
-}
-
-/** Degrees between the hover orientation and the rest orientation after the landing; 0 when either is unknown. */
-function landingTiltDeg(trace: Trace, seg: Segments): number {
+/** Degrees between the hover orientation and the rest orientation after the landing, or null when either has no direction. */
+function landingTiltDeg(trace: Trace, seg: Segments): number | null {
   const { samples } = trace;
   const restFrom = samples[samples.length - 1]!.t - REST_WINDOW_S;
-  const hover = meanDirection(samples.slice(seg.hoverFrom, seg.descentStart));
-  const rest = meanDirection(samples.filter((s) => s.t >= restFrom && s.t > samples[seg.impact]!.t));
-  if (hover === null || rest === null) return 0;
-  const cos = hover[0] * rest[0] + hover[1] * rest[1] + hover[2] * rest[2];
-  return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+  const hover = meanVector(samples.slice(seg.hoverFrom, seg.descentStart));
+  const rest = meanVector(samples.filter((s) => s.t >= restFrom && s.t > samples[seg.impact]!.t));
+  const cos = (hover.ax * rest.ax + hover.ay * rest.ay + hover.az * rest.az) / (magnitude(hover) * magnitude(rest));
+  // An empty window gives NaN, a zero vector gives 0/0: either way there is no direction.
+  return Number.isFinite(cos) ? (Math.acos(clamp(cos, -1, 1)) * 180) / Math.PI : null;
 }
 
 /** Nominal release height in m, from the trace rig or the default rig. */
@@ -68,10 +62,12 @@ export const freeFall: DropModel = {
       impactSpeed: () => Math.sqrt(2 * GRAVITY * rigHeightM(trace)),
       quality({ jitter }, ref) {
         const expectedS = Math.sqrt((2 * rigHeightM(trace)) / GRAVITY);
+        const tilt = landingTiltDeg(trace, seg);
         return combine(
           jitterScore(jitter, ref),
           factor(ramp(Math.abs(flightS / expectedS - 1) - FLIGHT_TOL, FLIGHT_FALL), 'flight-mismatch'),
-          factor(ramp(landingTiltDeg(trace, seg) - TILT_FREE_DEG, TILT_FALL_DEG), 'tilted-landing'),
+          // A landing that cannot be measured cannot be called level, so it scores 0.
+          factor(tilt === null ? 0 : ramp(tilt - TILT_FREE_DEG, TILT_FALL_DEG), 'tilted-landing'),
         );
       },
       // Raw peak is scored; the rig's speed is nominal and its stop time is the lobe width, so neither is.

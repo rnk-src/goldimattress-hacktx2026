@@ -1,4 +1,5 @@
 import type { ReferenceStats, RejectReason } from '../../domain';
+import { clamp } from './math';
 
 /** Hover jitter scale used before a person has a reference, m/s²; twice this was the old hard limit. */
 const PRIOR_JITTER_SCALE = 0.225;
@@ -13,7 +14,7 @@ export interface Score {
 }
 
 /** 1 up to `free`, then straight down to 0 over `fall`. */
-export const ramp = (excess: number, fall: number) => Math.min(1, Math.max(0, 1 - excess / fall));
+export const ramp = (excess: number, fall: number) => clamp(1 - excess / fall, 0, 1);
 
 /** One factor as a score: it names `issue` when the factor is below 1. */
 export const factor = (f: number, issue: RejectReason): Score => ({ weight: f, issues: f < 1 ? [issue] : [] });
