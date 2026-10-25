@@ -1,4 +1,5 @@
-import type { Caveat, Confidence, Verdict } from '../../domain';
+import type { Caveat, Confidence, FeatureName, FeatureStats, Verdict } from '../../domain';
+import { GRAVITY } from '../../signal';
 
 const CONFIDENCE: Record<Confidence, string> = {
   confident: 'confident',
@@ -30,3 +31,7 @@ export const hardnessText = (verdict: Verdict): string =>
 export const confidenceText = (verdict: Verdict): string => CONFIDENCE[verdict.confidence];
 
 export const caveatTexts = (verdict: Verdict): string[] => verdict.caveats.map((caveat) => CAVEAT[caveat]);
+
+/** The rig index: peak in g and the bounce ratio, labelled so nobody reads it as a stiffness. */
+export const indexText = (index: Record<FeatureName, FeatureStats>): string =>
+  `Rig index (for this rig): peak ${(index.peak.center / GRAVITY).toFixed(2)} g, bounce ratio ${index.bounceRatio.center.toFixed(2)}`;

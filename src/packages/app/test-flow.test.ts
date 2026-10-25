@@ -15,6 +15,17 @@ afterEach(() => {
   window.location.hash = '';
 });
 
+/** These tests cover the frozen body routines, which sit behind the legacy toggle: turn it on and pick the sit-drop. */
+function useBodyRoutine(root: HTMLElement) {
+  const legacy = root.querySelector<HTMLInputElement>('input[name="legacy"]');
+  if (!legacy) return;
+  legacy.checked = true;
+  legacy.dispatchEvent(new Event('change'));
+  const routine = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+  routine.value = 'sit-drop';
+  routine.dispatchEvent(new Event('change'));
+}
+
 const REST_S = 22;
 let nextId = 0;
 
@@ -69,6 +80,7 @@ function mount(samples: Sample[], store: Store, source?: SensorSource) {
     device: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
     newId: () => `id-${(nextId += 1)}`,
   });
+  useBodyRoutine(root);
   return { root, stop };
 }
 
