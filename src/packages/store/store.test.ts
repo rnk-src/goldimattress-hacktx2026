@@ -162,7 +162,7 @@ describe('trace encoding', () => {
   it('returns reference reps stored on a person', async () => {
     const trace = synthRep({ seed: 4 });
     const store = createLocalStore(memoryStorage());
-    const stats = { mean: 1, std: 0.1 };
+    const stats = { median: 1, mad: 0.1 };
     const reference = {
       stats: {
         routine: 'sit-drop' as const,
@@ -171,6 +171,7 @@ describe('trace encoding', () => {
         features: { peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
         leanDeg: stats,
         impactSpeed: stats,
+        jitterScale: 0.1,
       },
       reps: [accepted(trace)],
     };

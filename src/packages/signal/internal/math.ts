@@ -13,6 +13,24 @@ export function std(xs: readonly number[]): number {
   return Math.sqrt(sumSq / (xs.length - 1));
 }
 
+/** Median of `xs` where each value counts `ws[i]` times. Equals the plain median when all weights match. */
+export function weightedMedian(xs: readonly number[], ws: readonly number[]): number {
+  const order = xs.map((x, i) => ({ x, w: ws[i]! })).sort((a, b) => a.x - b.x);
+  const half = order.reduce((sum, o) => sum + o.w, 0) / 2;
+  let cum = 0;
+  for (let i = 0; i < order.length; i++) {
+    cum += order[i]!.w;
+    if (Math.abs(cum - half) < 1e-9 && i + 1 < order.length) return (order[i]!.x + order[i + 1]!.x) / 2;
+    if (cum > half) return order[i]!.x;
+  }
+  return order[order.length - 1]!.x;
+}
+
+/** Weighted MAD about `center`, scaled by 1.4826 so it matches the std of a normal distribution. */
+export function scaledMad(xs: readonly number[], ws: readonly number[], center: number): number {
+  return 1.4826 * weightedMedian(xs.map((x) => Math.abs(x - center)), ws);
+}
+
 /** Trapezoid rule over uneven spacing. 0 for fewer than 2 points. */
 export function integrate(t: readonly number[], y: readonly number[]): number {
   if (t.length !== y.length) throw new RangeError('t and y must have the same length');

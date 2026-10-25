@@ -20,7 +20,7 @@ export function compare(reps: readonly RepResult[], ref: ReferenceStats): Verdic
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of FEATURES) {
     const mean = ok.reduce((s, r) => s + r.features[name], 0) / ok.length;
-    const { mean: mu, std } = ref.features[name];
+    const { median: mu, mad: std } = ref.features[name];
     const sigmaEff = Math.max(std, REL_FLOOR * Math.abs(mu), absFloor);
     const value = (mean - mu) / sigmaEff;
     z[name] = value;

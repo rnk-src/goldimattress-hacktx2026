@@ -90,8 +90,10 @@ export interface RoutineSpec {
 }
 
 export interface FeatureStats {
-  mean: number;
-  std: number;
+  /** Quality-weighted median. */
+  median: number;
+  /** Quality-weighted MAD × 1.4826, comparable to a standard deviation. */
+  mad: number;
 }
 
 export interface ReferenceStats {
@@ -102,6 +104,8 @@ export interface ReferenceStats {
   features: Record<FeatureName, FeatureStats>;
   leanDeg: FeatureStats;
   impactSpeed: FeatureStats;
+  /** Median hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
+  jitterScale: number;
 }
 
 export type Label = 'just-right' | 'slightly' | 'much';

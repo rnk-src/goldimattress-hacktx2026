@@ -69,15 +69,13 @@ describe('analyzeRep on the real desk-chair set', () => {
     }
   });
 
-  it('flags the badly placed rep first when the five reps form a reference', () => {
+  it('builds a reference from all five reps, badly placed one included', () => {
     const traces = loadFixture('desk-chair-set1').traces;
-    const odd = oddRepOf(traces);
-    expect(hoverLean(traces[odd]!)).toBeGreaterThan(30);
+    expect(hoverLean(traces[oddRepOf(traces)]!)).toBeGreaterThan(30);
     const results: RepResult[] = traces.map((t) => analyzeRep(t));
     expect(results.every((r) => r.ok)).toBe(true);
-    const reference = buildReference(results, 'sit-drop');
-    expect(reference.ok).toBe(false);
-    if (!reference.ok) expect(reference.outliers[0]).toBe(odd);
+    // Lean is a covariate now, so the badly placed rep no longer fails the reference by itself.
+    expect(buildReference(results, 'sit-drop').ok).toBe(true);
   });
 
   it('builds a reference from the good reps', () => {
