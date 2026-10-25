@@ -84,3 +84,23 @@ describe('recording format', () => {
     expect(catchError(() => parseRecording(null))).toBeInstanceOf(RecordingFormatError);
   });
 });
+
+describe('parseRecording rig-drop', () => {
+  const rig = { massKg: 2.1, baseCm: [17.5, 9], dropHeightCm: 5, spot: 'center' } as const;
+  const rigRecording = (r: unknown): unknown => ({
+    ...recording,
+    traces: [{ ...recording.traces[0], routine: 'rig-drop', rig: r }],
+  });
+
+  it('round-trips a rig-drop trace with its rig', () => {
+    const parsed = parseRecording(JSON.parse(serializeRecording(rigRecording(rig) as Recording)));
+    expect(parsed.traces[0]!.routine).toBe('rig-drop');
+    expect(parsed.traces[0]!.rig).toEqual(rig);
+  });
+
+  it('rejects a malformed rig', () => {
+    const err = catchError(() => parseRecording(rigRecording({ ...rig, massKg: 'heavy' })));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe('traces[0].rig.massKg');
+  });
+});
