@@ -101,6 +101,14 @@ describe('compare', () => {
     expect(v.perFeatureZ.peak).toBeCloseTo(0.6 / (0.08 * 12));
   });
 
+  it('uses a 5% relative floor for a rig-drop reference and keeps 8% for the body', () => {
+    const consistent = ref({ peak: 0.01, stopTime: 0.0001, bounceRatio: 0.0001, settleTime: 0.0001 });
+    const rigRef = { ...consistent, routine: 'rig-drop' as const };
+    const shifted = (routine: Routine) => rep({ peak: 12.6 }, { routine });
+    expect(compare([shifted('rig-drop')], rigRef).perFeatureZ.peak).toBeCloseTo(0.6 / (0.05 * 12));
+    expect(compare([shifted('sit-drop')], consistent).perFeatureZ.peak).toBeCloseTo(0.6 / (0.08 * 12));
+  });
+
   it('uses the absolute floor when bounceRatio is near 0', () => {
     const dead = { ...BASE, bounceRatio: 0 };
     const v = compare([rep({ bounceRatio: 0.03 })], ref({ bounceRatio: 0 }, dead));
