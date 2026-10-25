@@ -19,6 +19,13 @@ describe('createRepSession hover coaching', () => {
     expect(session.state).toBe('holding');
   });
 
+  it('does not arm on a wobbling hover even when some windows look still', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, synthStream([{ failure: 'moving-hover' }]).slice(0, 90));
+    expect(events.filter((e) => e.kind === 'state').map((e) => e.kind === 'state' && e.state)).not.toContain('armed');
+    expect(keys(events)).not.toContain('drop-when-ready');
+  });
+
   it('arms with a drop cue once the hover is still, then reports capturing at the drop', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{}]).slice(0, 55));
