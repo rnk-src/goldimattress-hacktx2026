@@ -43,6 +43,18 @@ export function riseStart(mags: readonly number[], end: number, peak: number): n
   return impact;
 }
 
+/** Runs of consecutive samples at index `from` or later with |a| below `threshold`, in time order. */
+export function lowRuns(mags: readonly number[], threshold: number, from = 0): { start: number; end: number }[] {
+  const runs: { start: number; end: number }[] = [];
+  for (let i = from; i < mags.length; i++) {
+    if (mags[i]! >= threshold) continue;
+    const start = i;
+    while (i + 1 < mags.length && mags[i + 1]! < threshold) i++;
+    runs.push({ start, end: i });
+  }
+  return runs;
+}
+
 export type Axis = 'hardness' | 'springiness';
 
 /** What a model needs from the routine and the hover check, so it imports neither. */
