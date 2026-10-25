@@ -28,6 +28,7 @@ function measure(opts: SynthOptions) {
   });
   const v = opts.impactSpeed ?? 0.6;
   return {
+    peak: excess[peakIndex]!,
     peakOverV: excess[peakIndex]! / v,
     stopTime: samples[stopIndex]!.t - impactT,
     settleTime: samples[settleIndex]!.t - impactT,
@@ -45,6 +46,7 @@ describe('expectedFeatures', () => {
     const expected = expectedFeatures(opts);
     const measured = measure(opts);
     expect(expected.bounceRatio).toBe(bounceRatio);
+    expect(Math.abs(expected.peak / measured.peak - 1)).toBeLessThan(0.01);
     expect(Math.abs(expected.peakOverV / measured.peakOverV - 1)).toBeLessThan(0.01);
     expect(Math.abs(expected.stopTime - measured.stopTime)).toBeLessThan(0.003);
     expect(Math.abs(expected.settleTime - measured.settleTime)).toBeLessThan(0.003);

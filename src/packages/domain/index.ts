@@ -29,6 +29,8 @@ export interface Recording {
 }
 
 export interface RepFeatures {
+  /** First-lobe maximum of |a| over 1 g, m/s². Higher = firmer. */
+  peak: number;
   /** a_peak / v_impact, 1/s. Higher = firmer. */
   peakOverV: number;
   /** Impact to first return to 1 g, s. Shorter = firmer. */

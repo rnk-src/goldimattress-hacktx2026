@@ -104,7 +104,7 @@ const REF: ReferenceStats = {
   routine: 'sit-drop',
   repCount: 5,
   createdAt: '2026-10-24T16:00:00.000Z',
-  features: { peakOverV: stats(20), stopTime: stats(0.2), bounceRatio: stats(0.4), settleTime: stats(2) },
+  features: { peak: stats(12), peakOverV: stats(20), stopTime: stats(0.2), bounceRatio: stats(0.4), settleTime: stats(2) },
   leanDeg: stats(15),
   impactSpeed: stats(0.6),
   jitterScale: 0.1,
