@@ -10,7 +10,7 @@ const trace = (routine: Routine = 'sit-drop') => ({
   samples: [],
 });
 
-const BASE: RepFeatures = { peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
+const BASE: RepFeatures = { peak: 12, peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
 
 function rep(
   f: Partial<RepFeatures> = {},
@@ -55,43 +55,50 @@ describe('compare', () => {
   it('gives match 61 for H = 2, S = 0 and 37 for H = S = 2 once hardness is reliable', () => {
     const opts = { hardnessReliable: true };
     // 10% ref std, so a 20% shift is z = 2.
-    const harder = rep({ peakOverV: 24, stopTime: 0.16 });
+    const harder = rep({ peak: 14.4 });
     const h = compare([harder], ref(), opts);
     expect(h.hardness).toBeCloseTo(2);
     expect(h.springiness).toBeCloseTo(0);
     expect(Math.round(h.match)).toBe(61);
-    const both = compare([rep({ peakOverV: 24, stopTime: 0.16, bounceRatio: 0.48, settleTime: 1.8 })], ref(), opts);
+    const both = compare([rep({ peak: 14.4, bounceRatio: 0.48, settleTime: 1.8 })], ref(), opts);
     expect(both.springiness).toBeCloseTo(2);
     expect(Math.round(both.match)).toBe(37);
   });
 
   it('labels hardness just-right below 2, slightly from 2 to 3, much above 3', () => {
     const at = (shift: number) =>
-      compare([rep({ peakOverV: 20 * (1 + 0.1 * shift), stopTime: 0.2 * (1 - 0.1 * shift) })], ref());
+      compare([rep({ peak: 12 * (1 + 0.1 * shift) })], ref());
     expect(at(1.9).hardnessLabel).toBe('just-right');
     expect(at(2.1).hardnessLabel).toBe('slightly');
     expect(at(2.9).hardnessLabel).toBe('slightly');
     expect(at(3.1).hardnessLabel).toBe('much');
   });
 
-  it('reports firmer for higher peakOverV and bouncier for higher bounceRatio', () => {
-    const firm = compare([rep({ peakOverV: 30, stopTime: 0.1 })], ref());
+  it('reports firmer for higher peak and bouncier for higher bounceRatio', () => {
+    const firm = compare([rep({ peak: 18 })], ref());
     expect(firm.firmer).toBe(true);
     expect(firm.hardness).toBeGreaterThan(0);
-    const soft = compare([rep({ peakOverV: 10, stopTime: 0.4 })], ref());
+    const soft = compare([rep({ peak: 6 })], ref());
     expect(soft.firmer).toBe(false);
     expect(soft.hardness).toBeLessThan(0);
     expect(compare([rep({ bounceRatio: 0.7, settleTime: 2.5 })], ref()).bouncier).toBe(true);
     expect(compare([rep({ bounceRatio: 0.1, settleTime: 0.5 })], ref()).bouncier).toBe(false);
   });
 
+  it('scores hardness on peak alone and records peakOverV and stopTime without scoring them', () => {
+    const v = compare([rep({ peakOverV: 40, stopTime: 0.05 })], ref());
+    expect(v.hardness).toBeCloseTo(0);
+    expect(v.perFeatureZ.peakOverV).toBeGreaterThan(3);
+    expect(v.perFeatureZ.stopTime).toBeLessThan(-3);
+  });
+
   it('calls a 5% shift just right on a very consistent reference (8% floor)', () => {
-    const v = compare([rep({ peakOverV: 21, stopTime: 0.19, bounceRatio: 0.42, settleTime: 1.575 })], ref({
-      peakOverV: 0.01, stopTime: 0.0001, bounceRatio: 0.0001, settleTime: 0.0001,
+    const v = compare([rep({ peak: 12.6, bounceRatio: 0.42, settleTime: 1.575 })], ref({
+      peak: 0.01, stopTime: 0.0001, bounceRatio: 0.0001, settleTime: 0.0001,
     }));
     expect(v.hardnessLabel).toBe('just-right');
     expect(v.springinessLabel).toBe('just-right');
-    expect(v.perFeatureZ.peakOverV).toBeCloseTo(1 / (0.08 * 20));
+    expect(v.perFeatureZ.peak).toBeCloseTo(0.6 / (0.08 * 12));
   });
 
   it('uses the absolute floor when bounceRatio is near 0', () => {
@@ -132,7 +139,7 @@ describe('compare uncertainty', () => {
   const bouncy = (z: number) => ({ bounceRatio: 0.4 * (1 + 0.1 * z), settleTime: 1.5 * (1 + 0.1 * z) });
 
   it('matches on springiness alone until hardness is reliable', () => {
-    const harder = compare([rep({ peakOverV: 24, stopTime: 0.16 })], ref());
+    const harder = compare([rep({ peak: 14.4 })], ref());
     expect(harder.hardnessReliable).toBe(false);
     expect(harder.match).toBeCloseTo(100);
     const bouncier = compare([rep(bouncy(2))], ref());
@@ -163,7 +170,7 @@ describe('compare uncertainty', () => {
   });
 
   it('ignores hardness for confidence while hardness is unreliable', () => {
-    const harder = fiveOf({ peakOverV: 24, stopTime: 0.16 });
+    const harder = fiveOf({ peak: 14.4 });
     expect(compare(harder, ref()).confidence).toBe('confident');
   });
 
@@ -210,7 +217,7 @@ describe('compare uncertainty', () => {
 
 describe('buildReference', () => {
   const five = (over: (i: number) => RepResult = () => rep()) => [0, 1, 2, 3, 4].map(over);
-  const peaks = (xs: number[], o: Parameters<typeof rep>[1] = {}) => xs.map((peakOverV) => rep({ peakOverV }, o));
+  const peaks = (xs: number[], o: Parameters<typeof rep>[1] = {}) => xs.map((peak) => rep({ peak }, o));
 
   it('rejects fewer than 3 usable reps as too-few', () => {
     const bad: RepResult = { ok: false, reasons: ['not-still'], trace: trace() };
@@ -255,7 +262,7 @@ describe('buildReference', () => {
     if (!r.ok) throw new Error('expected ok');
     expect(r.dropped).toEqual([4]);
     expect(r.ref.repCount).toBe(4);
-    expect(r.ref.features.peakOverV.median).toBeCloseTo(20.05);
+    expect(r.ref.features.peak.median).toBeCloseTo(20.05);
   });
 
   it('keeps every rep when fewer than 5 are usable', () => {

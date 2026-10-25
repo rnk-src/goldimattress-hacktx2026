@@ -13,7 +13,7 @@ const verdict: Verdict = {
   firmer: false,
   bouncier: false,
   match: 100,
-  perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  perFeatureZ: { peak: 0, peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
   hardnessInterval: [0, 0],
   springinessInterval: [0, 0],
   confidence: 'confident',
@@ -118,7 +118,7 @@ describe('tests', () => {
 });
 
 describe('trace encoding', () => {
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
   const accepted = (trace: Trace): RepResult => ({
     ok: true,
     features,
@@ -174,7 +174,7 @@ describe('trace encoding', () => {
         routine: 'sit-drop' as const,
         repCount: 1,
         createdAt: '2026-10-24T16:00:00.000Z',
-        features: { peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
+        features: { peak: stats, peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
         leanDeg: stats,
         impactSpeed: stats,
         jitterScale: 0.1,
@@ -198,7 +198,7 @@ describe('trace encoding', () => {
 });
 
 describe('capacity', () => {
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
   /** A typical test: 5 accepted reps and 1 rejected, each a 3.5 s trace at 60 Hz. */
   const typicalTest = (i: number): TestRecord => ({
     ...record(`t${i}`, 'p1', 's1'),
@@ -249,7 +249,7 @@ describe('capacity', () => {
 
 describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
   it('stamps what it writes with schema version 1', async () => {
     const storage = memoryStorage();

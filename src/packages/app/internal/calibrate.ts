@@ -22,6 +22,7 @@ const PLACEMENT: Record<Routine, { label: string; text: string }> = {
 };
 
 const FEATURE_UNITS: Record<FeatureName, string> = {
+  peak: 'm/s²',
   peakOverV: '1/s',
   stopTime: 's',
   bounceRatio: '',
