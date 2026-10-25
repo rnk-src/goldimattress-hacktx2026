@@ -56,7 +56,7 @@ Caveats:
 - `Store` persists people, references and tests.
   - `LocalStore` (`localStorage`) is the first implementation. `CloudStore` is the stretch goal.
 - Pipeline per rep: hover detect → stillness + angle check → impact segmentation → impact speed → features → accept or reject.
-- Per test: 5 accepted reps → feature means → compare to reference → verdict.
+- Per test: up to 10 attempts, 3 to 5 usable reps → weighted medians → compare to reference → verdict with uncertainty.
 - The sensing half hands the app half one agreed result type (features + verdict + rejected reps). Fix it before building either side.
 
 ### Data recorded per test
@@ -82,7 +82,7 @@ Caveats:
 | Platform | Vanilla TS + Vite web app on GitHub Pages | No install, any phone, no laptop needed. |
 | Analysis | On the phone | Works offline; no server to fail. |
 | Storage | `LocalStore` now, `CloudStore` later | Local first; the interface allows a shared database. |
-| Calibration | 5 reps; store each feature's mean and spread | The spread separates real differences from noise. |
+| Calibration | 3 to 5 usable reps out of up to 10 attempts; store each feature's weighted median and scaled MAD | People are not perfect every rep; robust statistics and the spread separate real differences from noise. |
 | References | One per routine per person | Routines produce different signals and cannot be compared. |
 | Surface identity | Typed name with autocomplete | Simplest way to link tests of the same item. |
 | Demo | Live on cushions and couches; video of a bed; topper experiment slide | No bed at the venue. |
@@ -99,19 +99,29 @@ The same person calibrates and tests, so the protocol must make the body act the
 - Loose cushions and pads go on the same chair every time. This fixes the height and avoids bottoming out onto the floor.
 - A mattress sit-drop at the edge measures edge support, not the sleep surface. Use the bridge drop for mattresses.
 
-### Checks the app enforces on every rep
-- **Stillness**: low jitter during the hover before the drop.
-- **Angle**: torso lean (sit-drop) or pelvis angle (bridge drop) from the gravity vector during the hover. Calibration records it; test reps must be within ±5°.
-- **Impact speed**: within ±20% of the reference.
-- **Caught landing**: a soft, smeared impact suggests tensed legs. Reject it.
-- Rejected reps show a message ("lean a bit less", "hold still") and do not count.
+### Checks the app runs on every rep
+People are not perfect for five whole reps. The app scores each rep instead of passing or failing it. Provisional numbers are tuned with the human-error simulator and real data.
+- **Invalid (dropped, never scored)**: `no-drop-found`, `left-surface`, `low-sample-rate`, and no still hover (jitter above a high ceiling).
+- **Scored (weight 0 to 1)**: hover jitter, lean, impact speed and caught landing. Each lowers the weight smoothly. A rep with weight ≥ 0.5 is *usable*.
+- **Covariates**: record lean, impact speed, rest length and whether the rest was skipped on every rep.
+- **Jitter is per person**: the first 2 reps use a global prior. After that the scale is the median jitter of the person's valid reps. The reference stores it and tests reuse it.
+- **Lean is relative**: compare to the reference median lean, with a soft penalty beyond about ±10°. Lean differs by surface, so a difference becomes a verdict caveat, not a reject.
+- **Speed**: `peak_over_v` already divides by speed. A large mismatch with the reference lowers the weight only.
+- Every dropped or low-weight rep shows a short fix message ("lean a bit less", "hold still").
+
+### Rep session rules
+- Up to 10 attempts. Finish at 5 usable reps.
+- The user may finish at 3 usable reps. The result is then marked low confidence.
+- Fewer than 3 usable reps after 10 attempts: say the technique or surface is not working and offer a retry.
+- Rest defaults to 20 s. The user may skip it. The rep records the skip.
+- Progress counts usable reps out of 5.
 
 ### Held constant by the user
 - Same person, shoes off, pockets empty, thin clothing over the phone.
 - Legs fully relaxed at impact. Feet flat, same distance from the surface.
 - Same landing spot: sit-drop ~30 cm in from the edge; bridge drop at normal hip position.
 - Stay still and hold your breath for 2 s after impact.
-- Rest ~20 s between reps so foam recovers. 5 accepted reps per test.
+- Rest ~20 s between reps so foam recovers (the user may skip). Aim for 5 usable reps per test.
 
 ### Safety
 - Hover 10 cm or less. Never drop from standing height.
@@ -128,13 +138,25 @@ Features per rep:
 | `settle_time` (until within ±0.05 g of rest) | Springiness | longer = springier |
 
 Steps:
-1. Calibration stores each feature's mean μ_ref and standard deviation σ_ref over 5 reps.
-2. A test averages 5 reps to get μ_test.
-3. Per feature: z = (μ_test − μ_ref) / σ_eff, where σ_eff = max(σ_ref, 8% of μ_ref).
-   The floor stops very consistent users from getting imperceptible differences flagged. Tune 8% with real data.
+1. Calibration stores each feature's quality-weighted median μ_ref and scaled MAD (1.4826 · MAD) over its usable reps.
+   - Auto-drop a rep more than 3 scaled MADs from the median, only when at least 5 reps are valid and never below 3. Show a note, not a redo request.
+   - A reference needs at least 3 usable reps.
+2. A test takes the same weighted median over its usable reps to get μ_test.
+3. Per feature: z = (μ_test − μ_ref) / σ_eff, where σ_eff = max(scaled MAD, 8% of μ_ref, absolute floor).
+   - With 3 or 4 reference reps, multiply the floor by 1.5.
+   - The floor stops very consistent users from getting imperceptible differences flagged. Tune 8% and 1.5 with real data and the simulator.
 4. Hardness score H = mean(z_peak_over_v, −z_stop_time). Springiness score S = mean(z_bounce_ratio, z_settle_time).
 5. Labels: |score| < 2 = just right / same bounce; 2–3 = "slightly"; > 3 = "much". The sign gives harder/softer and bouncier/deader.
 6. Match = 100 · e^(−(H² + S²) / 8). Examples: H = S = 0 → 100%; H = 2, S = 0 → 61%; H = S = 2 → 37%.
+   - Until the multi-surface data fixes the hardness axis, the match uses S only and hardness shows "can't tell yet".
+
+Uncertainty:
+- Standard error per axis is about σ_eff/√n, with n the usable reps.
+- The interval straddles a label boundary (2 or 3): say "close call".
+- Fewer than 3 usable reps, or a low mean weight: say "not enough data" and show no label.
+- After 3 usable reps the app offers "finish now". It reads "confident" only when the interval sits inside one label.
+- Never give a confident label from fewer than 3 reps.
+- Caveats list the lean difference from calibration and any skipped rests.
 
 ±2 is used because ~95% of a person's own reps on the reference fall inside it.
 
@@ -205,9 +227,16 @@ Start only after the core works on both routines.
 - Tests feed the signal core **synthetic acceleration traces** with known answers (hover, then a damped spring at a set f and A₂/A₁). They also check that tilted, moving and caught-landing reps are rejected.
 - Phone testing during development: Vite dev server + an ngrok HTTPS tunnel (iOS needs HTTPS for motion permission).
 - Users always use the GitHub Pages build, which runs without any laptop.
-- Work splits into two equal halves:
-  - **Sensing**: capture, hover and angle checks, segmentation, impact speed, features, verdict. Stretch: Layer 1/2 normalization, clustering.
-  - **App and data**: hosting, permission flow, screens, coaching, `LocalStore`. Stretch: `CloudStore`, listings, autocomplete.
+- A human-error simulator in `testkit` makes synthetic reps with realistic variation: speed sd 25%, lean sd 6° on a surface offset, hover sway across the measured range and a 35% bad-rep rate. The policy passes only if, over many simulated users:
+  1. At least 90% finish calibration within 8 attempts.
+  2. At least 90% who retest the same surface read "just right" on both axes.
+  3. Two surfaces with a realistic gap separate in at least 90% of runs.
+  4. At most 5% give a confident wrong direction.
+  Change these numbers only with the lead's approval. The hardness gap in criterion 3 is set from real multi-surface data.
+- Work splits into two lanes of equal size:
+  - **Sensing**: contract types, `signal` scoring and robust statistics, verdict uncertainty, simulator, hardness-axis fix, bridge-drop tuning. Stretch: shared listings model.
+  - **App and data**: store hardening, capture export fixes, the `session` finish rule, calibrate, test and result screens, routines, autocomplete, offline. Stretch: `CloudStore`, listings screen.
+  - Both lanes collect data: sloppy-but-honest sets from non-athletes (app lane); one person on 4+ surfaces of known order (sensing lane).
 
 ## Git workflow
 - `main` stays clean. Each task gets a branch: `feat/<name>`, `fix/<name>`, `docs/<name>`.
