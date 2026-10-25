@@ -352,3 +352,13 @@ describe('compare centre', () => {
     expect(withTrim.perFeatureZ.peakOverV).toBeCloseTo(((19.8 + 20.4 + 20.6) / 3 - 20) / 1.6, 5);
   });
 });
+
+describe('5-rep reference against a short test', () => {
+  // shortcut: the reference uses the trimmed mean at 5 reps and the test uses the median at 3 to 4; only finiteness is checked.
+  it.each([3, 4])('gives a finite verdict for %i test reps', (n) => {
+    const r = buildReference([19, 19.8, 20, 20.4, 21].map((v) => rep({ peakOverV: v })), 'sit-drop');
+    if (!r.ok) throw new Error('reference should build');
+    const v = compare(Array.from({ length: n }, (_, i) => rep({ peakOverV: 20 + i })), r.ref);
+    for (const x of [...Object.values(v.perFeatureZ), v.hardness, v.springiness, v.match]) expect(Number.isFinite(x)).toBe(true);
+  });
+});
