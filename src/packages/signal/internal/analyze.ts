@@ -221,6 +221,6 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (measured === null) return reject(trace, ['no-drop-found']);
   const late = gate(trace, measured, ref);
   if (late.length > 0) return reject(trace, late);
-  // shortcut: every valid rep weighs 1 until the quality scoring lands.
+  // shortcut: every valid rep weighs 1, replace with quality scoring on the signal scoring branch.
   return { ok: true, ...measured, hoverJitter: assessment.jitter, weight: 1, trace };
 }
