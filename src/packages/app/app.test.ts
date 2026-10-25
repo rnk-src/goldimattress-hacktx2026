@@ -296,6 +296,27 @@ describe('startApp', () => {
       }
     });
 
+    it('tells the user to strap the phone on the slab, not hold it on the chest', async () => {
+      vi.useFakeTimers();
+      const root = document.createElement('main');
+      document.body.append(root);
+      window.location.hash = '#/capture';
+      startApp(root, {
+        source: createReplaySource(replayTrace(), { realtime: true }),
+        store: store(),
+        makeCoach: coach,
+        now: () => new Date('2026-10-24T16:00:00.000Z'),
+        device: 'Replay phone',
+        newId: () => 'test-id',
+      });
+      const routine = root.querySelector<HTMLSelectElement>('[name="routine"]')!;
+      routine.value = 'rig-drop';
+      routine.dispatchEvent(new Event('change'));
+      root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+      expect(root.querySelector('[data-capture-status]')?.textContent).toContain('slab');
+      expect(root.querySelector('[data-capture-status]')?.textContent).not.toContain('sternum');
+    });
+
     it('records the mass, height and spot the user sets', async () => {
       const traces = await captureRig((root) => {
         const set = (name: string, value: string) => {

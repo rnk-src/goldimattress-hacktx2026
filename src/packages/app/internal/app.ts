@@ -185,6 +185,7 @@ function captureView(
     sound.textContent = muted ? 'Unmute cues' : 'Mute cues';
   });
   button?.addEventListener('click', () => {
+    // shortcut: a rig-drop uses the sit-drop window and rest lengths; switch to the rig spec when the plate data shows they differ.
     const rigDrop = routine?.value === 'rig-drop';
     // shortcut: a bad or empty number falls back to the default rig value with no error shown; add validation if people mistype.
     const positive = (name: string, fallback: number) => (Number(rigInput(name)) > 0 ? Number(rigInput(name)) : fallback);
@@ -369,7 +370,11 @@ function captureView(
       });
     };
 
-    if (status) status.textContent = 'Get ready. Hold the phone flat on your sternum and get into the hover.';
+    if (status) {
+      status.textContent = rigDrop
+        ? 'Get ready. Strap the phone on the slab and hold it flat above the surface.'
+        : 'Get ready. Hold the phone flat on your sternum and get into the hover.';
+    }
     coach.play({ key: 'place-phone', text: 'Get ready. Get into the hover.' });
     phase(READY_S, (n) => `Get ready: first drop window opens in ${n} s`, record, true);
 
