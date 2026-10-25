@@ -63,8 +63,8 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
 /**
  * Turns whatever is in storage into the current schema. Missing, corrupt or unrecognised data
  * reads as empty, and the next save replaces it.
- * shortcut: corrupt data and a version newer than this build both read as empty and are overwritten
- * by the next save, with no backup. Keep the raw value under a second key if that ever bites.
+ * Corrupt data and a version newer than this build both read as empty. Before the next save replaces
+ * either one, the local store keeps the raw value under its corrupt-backup key.
  */
 export function readStoredState(raw: string | null): { data: StoredData; corrupt: boolean } {
   if (raw === null) return { data: emptyStored(), corrupt: false };
