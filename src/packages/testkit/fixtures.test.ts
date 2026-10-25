@@ -16,6 +16,12 @@ describe('loadFixture', () => {
     expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
   });
 
+  it('reads the real couch recording as five sit-drops', () => {
+    const rec = loadFixture('couch-set1');
+    expect(rec.traces).toHaveLength(5);
+    expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
+  });
+
   it('names the fixture when it does not exist', () => {
     expect(() => loadFixture('no-such-fixture')).toThrow(/no-such-fixture/);
   });
