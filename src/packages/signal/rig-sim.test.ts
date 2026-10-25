@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ReferenceStats, RepResult, Verdict } from '../domain';
+import type { RepResult, Verdict } from '../domain';
 import { createSimRigUser, rigAttempt } from '../testkit';
 import type { RigSurface, SimRigUser } from '../testkit';
 import { analyzeRep, buildReference, compare, isUsable } from './index';
@@ -41,7 +41,7 @@ function calibrateAndTest(seed: number, reference: RigSurface, tested: RigSurfac
   const built = buildReference(session(user, reference).reps, 'rig-drop');
   if (!built.ok) return null;
   const test = session(user, tested);
-  return test.usable === 0 ? null : compare(test.reps, built.ref as ReferenceStats, HARDNESS);
+  return test.usable === 0 ? null : compare(test.reps, built.ref, HARDNESS);
 }
 
 const seeds = Array.from({ length: USERS }, (_, i) => i + 1);
