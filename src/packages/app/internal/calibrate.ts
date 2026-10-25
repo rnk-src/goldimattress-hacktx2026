@@ -47,6 +47,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         </label>
         <section data-placement aria-label="Phone placement"></section>
         <p data-cue-text class="cue-panel__text" role="status" aria-live="polite"></p>
+        <p data-rep-feedback role="status" aria-live="polite"></p>
         <ol data-rep-dots aria-label="Accepted reps">
           ${Array.from({ length: CALIBRATION_REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span></li>`).join('')}
         </ol>
@@ -59,6 +60,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const routineSelect = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
   const placement = root.querySelector<HTMLElement>('[data-placement]')!;
   const cueText = root.querySelector<HTMLElement>('[data-cue-text]')!;
+  const feedback = root.querySelector<HTMLElement>('[data-rep-feedback]')!;
   const dots = Array.from(root.querySelectorAll<HTMLElement>('[data-rep-dots] li'));
   const rejectedList = root.querySelector<HTMLElement>('[data-rejected-reps]')!;
   const button = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
@@ -75,6 +77,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const clearProgress = () => {
     result.hidden = true;
     rejectedList.replaceChildren();
+    feedback.textContent = '';
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
   };
   showPlacement();
@@ -94,7 +97,9 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const show = (events: SessionEvent[]) => {
     for (const event of events) {
       if (event.kind === 'cue') {
-        cueText.textContent = event.cue.text;
+        // The rep verdict has its own line, so the rest or done cue that follows it cannot hide the fix.
+        if (event.cue.key === 'rep-accepted' || event.cue.key === 'rep-rejected') feedback.textContent = event.cue.text;
+        else cueText.textContent = event.cue.text;
         getCoach().play(event.cue);
       } else if (event.kind === 'rep') {
         if (event.result.ok) {
