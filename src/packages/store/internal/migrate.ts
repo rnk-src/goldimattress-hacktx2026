@@ -31,12 +31,18 @@ function isStoredTrace(x: unknown): boolean {
 const areReps = (x: unknown): boolean =>
   Array.isArray(x) && x.every((rep) => isObject(rep) && isStoredTrace(rep.trace));
 
+const isStat = (x: unknown): boolean => isObject(x) && 'center' in x;
+
+/** Reference stats in the current shape (`center`, not the old `median` or `mean`). */
+const isStats = (x: unknown): boolean =>
+  isObject(x) && isObject(x.features) && isStat(x.leanDeg) && isStat(x.impactSpeed) && typeof x.jitterScale === 'number';
+
 /**
- * Checks the parts of a v1 or v2 blob the decoders rely on: people with references, tests with reps.
- * shortcut: scalar fields (names, stats, verdicts) are trusted, so a hand-edited blob can still
- * misbehave; add a schema check if the data ever comes from outside this app.
+ * Checks the parts of a v2 blob the decoders rely on: people with references and stats, tests with reps.
+ * shortcut: scalar fields (names, verdicts, each feature's stats) are trusted, so a hand-edited blob can
+ * still misbehave; add a schema check if the data ever comes from outside this app.
  */
-function isValidV1(data: Record<string, unknown>): boolean {
+function isValidStored(data: Record<string, unknown>): boolean {
   const people = data.people as unknown[];
   const tests = data.tests as unknown[];
   return (
@@ -45,41 +51,20 @@ function isValidV1(data: Record<string, unknown>): boolean {
       (p) =>
         isObject(p) &&
         isObject(p.references) &&
-        Object.values(p.references).every((ref) => isObject(ref) && areReps(ref.reps)),
+        Object.values(p.references).every((ref) => isObject(ref) && isStats(ref.stats) && areReps(ref.reps)),
     ) &&
     tests.every((t) => isObject(t) && areReps(t.reps))
   );
 }
 
-/** v0 had no version field and kept every trace as a plain array of samples. Returns v1 data. */
+/** v0 had no version field and kept every trace as a plain array of samples. Returns v2 data. */
 function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestRecord[] }): Record<string, unknown> {
   return {
-    version: 1,
+    version: 2,
     people: old.people.map(encodePerson),
     surfaces: old.surfaces,
     tests: old.tests.map(encodeTest),
   };
-}
-
-const renameMedian = (s: Record<string, unknown>): unknown => {
-  const { median, ...rest } = s;
-  return median === undefined ? s : { center: median, ...rest };
-};
-
-/** v1 called `FeatureStats.center` `median`. Renames it in every stored reference. */
-function migrateV1(data: Record<string, unknown>): StoredData {
-  const people = (data.people as Record<string, unknown>[]).map((p) => ({
-    ...p,
-    references: Object.fromEntries(
-      Object.entries(p.references as Record<string, { stats: Record<string, Record<string, unknown>> }>).map(([routine, ref]) => {
-        const { features, leanDeg, impactSpeed } = ref.stats;
-        const renamed = Object.fromEntries(Object.entries(features!).map(([k, v]) => [k, renameMedian(v as Record<string, unknown>)]));
-        const stats = { ...ref.stats, features: renamed, leanDeg: renameMedian(leanDeg!), impactSpeed: renameMedian(impactSpeed!) };
-        return [routine, { ...ref, stats }];
-      }),
-    ),
-  }));
-  return { ...data, version: 2, people } as unknown as StoredData;
 }
 
 /**
@@ -90,18 +75,13 @@ function migrateV1(data: Record<string, unknown>): StoredData {
  */
 export function readStored(raw: string | null): StoredData {
   if (raw === null) return emptyStored();
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed) || !isLists(parsed)) return emptyStored();
+    // shortcut: a v1 blob (old `median` stats) reads as empty with its people; dev data only, add a migration if real users ever hold v1.
+    const data = parsed.version === undefined ? migrateV0(parsed as Parameters<typeof migrateV0>[0]) : parsed;
+    return data.version === 2 && isValidStored(data) ? (data as unknown as StoredData) : emptyStored();
   } catch {
     return emptyStored();
   }
-  if (typeof parsed !== 'object' || parsed === null || !isLists(parsed as Record<string, unknown>)) {
-    return emptyStored();
-  }
-  const data = parsed as Record<string, unknown>;
-  if (data.version === undefined) return migrateV1(migrateV0(data as Parameters<typeof migrateV0>[0]));
-  if (data.version === 1) return isValidV1(data) ? migrateV1(data) : emptyStored();
-  if (data.version === 2) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
-  return emptyStored();
 }
