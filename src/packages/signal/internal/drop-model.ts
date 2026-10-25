@@ -1,10 +1,11 @@
-import type { FeatureName, ReferenceStats, RejectReason, Sample, Trace } from '../../domain';
+import type { FeatureName, ReferenceStats, RejectReason, RepFeatures, Sample, Trace } from '../../domain';
 import { GRAVITY } from './constants';
 import { DROP_JITTER, assessHover } from './hover';
 import { integrate } from './math';
 import { DEFAULT_RIG, routineSpec } from './routine';
 import type { DropModelName } from './routine';
-import { ramp, scoreRep } from './score';
+import { caughtLandingScore, combine, factor, jitterScore, ramp } from './score';
+import type { Score } from './score';
 
 /** |a| this far above 1 g marks the impact, m/s². Above hover wobble, below the weakest real impact. */
 export const IMPACT_EXCESS = 1.5;
@@ -47,8 +48,7 @@ function impactSpeedOf(trace: Trace, mags: readonly number[], descentStart: numb
   return -(integrate(t, excess) + (step / 2) * excess[excess.length - 1]!);
 }
 
-/** `flightS` is set by the free-fall model only: the measured time near 0 g before the impact, s. */
-export type Segments = { impact: number; descentStart: number; hoverFrom: number; flightS?: number };
+export type Segments = { impact: number; descentStart: number; hoverFrom: number };
 
 /** Start two samples before the hover start, so the window covers the full hover time plus a sample. */
 function hoverFromOf(trace: Trace, descentStart: number): number {
@@ -157,7 +157,7 @@ const REST_WINDOW_S = 0.3;
  * follows. `flightS` is the run's length. The first still-to-fall change is the release, so no dip length is needed.
  * shortcut: FALL_ACCEL is half of g, not FLIGHT_ACCEL, so a dragged fall is found and scored; re-check on real rig data.
  */
-function freeFallDrop(trace: Trace, mags: readonly number[]): Segments | RejectReason {
+function freeFallDrop(trace: Trace, mags: readonly number[]): { seg: Segments; flightS: number } | RejectReason {
   const { samples } = trace;
   for (let start = 0; start < mags.length; start++) {
     if (mags[start]! >= FALL_ACCEL) continue;
@@ -167,7 +167,8 @@ function freeFallDrop(trace: Trace, mags: readonly number[]): Segments | RejectR
     const peak = count >= MIN_FALL_SAMPLES ? firstPeakAfter(samples, mags, end) : -1;
     if (peak >= 0) {
       const flightS = ((samples[end]!.t - samples[start]!.t) * count) / (count - 1);
-      return { impact: riseStart(mags, end, peak), descentStart: start, hoverFrom: hoverFromOf(trace, start), flightS };
+      const seg = { impact: riseStart(mags, end, peak), descentStart: start, hoverFrom: hoverFromOf(trace, start) };
+      return { seg, flightS };
     }
     start = end;
   }
@@ -194,27 +195,35 @@ function landingTiltDeg(trace: Trace, seg: Segments): number {
 
 export type Axis = 'hardness' | 'springiness';
 
-export interface QualityInput {
-  trace: Trace;
+/**
+ * A drop that a model found. Its closures hold the model's own segment, so only that model reads it.
+ * `flightS` is set by the free-fall model only: the measured time near 0 g before the impact, s.
+ */
+export interface FoundDrop {
   seg: Segments;
-  jitter: number;
-  stopTime: number;
+  flightS?: number;
+  /** Impact speed in m/s. */
+  impactSpeed(): number;
+  quality(input: { jitter: number; features: RepFeatures }, ref?: ReferenceStats): Score;
 }
 
-/** The three slots in which the body and the free-fall rig differ. */
+/** The slots in which the body and the free-fall rig differ. */
 export interface DropModel {
-  findDrop(trace: Trace, mags: readonly number[]): Segments | RejectReason;
-  /** Impact speed in m/s. */
-  impactSpeed(trace: Trace, mags: readonly number[], seg: Segments): number;
-  quality(input: QualityInput, ref?: ReferenceStats): { weight: number; issues: RejectReason[] };
+  findDrop(trace: Trace, mags: readonly number[]): FoundDrop | RejectReason;
   /** The features that score each axis. A feature not listed is recorded only. */
   axes: Partial<Record<FeatureName, Axis>>;
 }
 
 const body: DropModel = {
-  findDrop: bodySegment,
-  impactSpeed: (trace, mags, seg) => impactSpeedOf(trace, mags, seg.descentStart, seg.impact),
-  quality: ({ jitter, stopTime }, ref) => scoreRep({ jitter, stopTime }, ref),
+  findDrop(trace, mags) {
+    const seg = bodySegment(trace, mags);
+    if (typeof seg === 'string') return seg;
+    return {
+      seg,
+      impactSpeed: () => impactSpeedOf(trace, mags, seg.descentStart, seg.impact),
+      quality: ({ jitter, features }, ref) => combine(jitterScore(jitter, ref), caughtLandingScore(features.stopTime)),
+    };
+  },
   axes: { peakOverV: 'hardness', stopTime: 'hardness', bounceRatio: 'springiness' },
 };
 
@@ -222,20 +231,25 @@ const body: DropModel = {
 const rigHeightM = (trace: Trace) => (trace.rig ?? DEFAULT_RIG).dropHeightCm / 100;
 
 const freeFall: DropModel = {
-  findDrop: freeFallDrop,
-  impactSpeed: (trace) => Math.sqrt(2 * GRAVITY * rigHeightM(trace)),
-  quality({ trace, seg, jitter }, ref) {
-    // A zero stop time cannot be a caught landing, so scoreRep gives the jitter factor alone.
-    const base = scoreRep({ jitter, stopTime: 0 }, ref);
-    const expectedS = Math.sqrt((2 * rigHeightM(trace)) / GRAVITY);
-    const flight = ramp(Math.abs(seg.flightS! / expectedS - 1) - FLIGHT_TOL, FLIGHT_FALL);
-    const tilt = ramp(landingTiltDeg(trace, seg) - TILT_FREE_DEG, TILT_FALL_DEG);
-    const issues = [...base.issues];
-    if (flight < 1) issues.push('flight-mismatch');
-    if (tilt < 1) issues.push('tilted-landing');
-    return { weight: base.weight * flight * tilt, issues };
+  findDrop(trace, mags) {
+    const found = freeFallDrop(trace, mags);
+    if (typeof found === 'string') return found;
+    const { seg, flightS } = found;
+    return {
+      seg,
+      flightS,
+      impactSpeed: () => Math.sqrt(2 * GRAVITY * rigHeightM(trace)),
+      quality({ jitter }, ref) {
+        const expectedS = Math.sqrt((2 * rigHeightM(trace)) / GRAVITY);
+        return combine(
+          jitterScore(jitter, ref),
+          factor(ramp(Math.abs(flightS / expectedS - 1) - FLIGHT_TOL, FLIGHT_FALL), 'flight-mismatch'),
+          factor(ramp(landingTiltDeg(trace, seg) - TILT_FREE_DEG, TILT_FALL_DEG), 'tilted-landing'),
+        );
+      },
+      // Raw peak: the rig's speed is nominal and its stop time is the lobe width, so neither is scored.
+    };
   },
-  // Raw peak: the rig's speed is nominal and its stop time is the lobe width, so neither is scored.
   axes: { peak: 'hardness', bounceRatio: 'springiness' },
 };
 
