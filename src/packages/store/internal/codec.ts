@@ -44,7 +44,9 @@ const encodeTrace = (t: Trace): StoredTrace => ({ ...t, samples: encodeSamples(t
 const decodeTrace = (t: StoredTrace): Trace => ({ ...t, samples: decodeSamples(t.samples) });
 
 const encodeRep = (r: RepResult): StoredRep => ({ ...r, trace: encodeTrace(r.trace) });
-const decodeRep = (r: StoredRep): RepResult => ({ ...r, trace: decodeTrace(r.trace) }) as RepResult;
+// shortcut: reps saved before weights existed read as weight 1 and jitter 0; dev data only, drop when no old data remains.
+const decodeRep = (r: StoredRep): RepResult =>
+  ({ ...(r.ok ? { weight: 1, hoverJitter: 0 } : {}), ...r, trace: decodeTrace(r.trace) }) as RepResult;
 
 export function encodePerson(p: Person): StoredPerson {
   const references: StoredPerson['references'] = {};

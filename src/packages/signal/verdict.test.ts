@@ -21,6 +21,8 @@ function rep(
     features: { ...BASE, ...f },
     impactSpeed: o.impactSpeed ?? 0.6,
     leanDeg: o.leanDeg ?? 15,
+    hoverJitter: 0.1,
+    weight: 1,
     trace: trace(o.routine),
   };
 }

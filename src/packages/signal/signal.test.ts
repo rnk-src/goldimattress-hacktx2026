@@ -409,3 +409,13 @@ describe('analyzeRep drop selection', () => {
     if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
   });
 });
+
+describe('analyzeRep covariates', () => {
+  it('reports the hover jitter and a full weight on a clean rep', () => {
+    const opts: SynthOptions = { seed: 5 };
+    const rep = analyzeRep(synthRep(opts));
+    if (!rep.ok) throw new Error('expected an ok rep');
+    expect(rep.hoverJitter).toBeCloseTo(assessHover(hoverOf(opts), 'sit-drop').jitter, 1);
+    expect(rep.weight).toBe(1);
+  });
+});
