@@ -1,5 +1,5 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
-import { FEATURES } from './features-table';
+import { featuresOf } from './features-table';
 import { weightedMedian } from './math';
 import { relFloorOf } from './routine';
 import { summarize } from './summarize';
@@ -50,7 +50,7 @@ export function compare(
   const relFloor = relFloorOf(ref.routine);
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
-  for (const { name, absFloor, axis, sign } of FEATURES) {
+  for (const { name, absFloor, axis, sign } of featuresOf(ref.routine)) {
     const { center: mu, mad } = ref.features[name];
     const sigmaEff = Math.max(mad, floorFactor * Math.max(relFloor * Math.abs(mu), absFloor));
     const value = (summary.features[name].center - mu) / sigmaEff;

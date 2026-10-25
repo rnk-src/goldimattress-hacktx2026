@@ -1,4 +1,4 @@
-import type { ReferenceStats, RejectReason, Sample, Trace } from '../../domain';
+import type { FeatureName, ReferenceStats, RejectReason, Sample, Trace } from '../../domain';
 import { GRAVITY } from './constants';
 import { DROP_JITTER, assessHover } from './hover';
 import { integrate } from './math';
@@ -192,6 +192,8 @@ function landingTiltDeg(trace: Trace, seg: Segments): number {
   return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
 
+export type Axis = 'hardness' | 'springiness';
+
 export interface QualityInput {
   trace: Trace;
   seg: Segments;
@@ -205,12 +207,15 @@ export interface DropModel {
   /** Impact speed in m/s. */
   impactSpeed(trace: Trace, mags: readonly number[], seg: Segments): number;
   quality(input: QualityInput, ref?: ReferenceStats): { weight: number; issues: RejectReason[] };
+  /** The features that score each axis. A feature not listed is recorded only. */
+  axes: Partial<Record<FeatureName, Axis>>;
 }
 
 const body: DropModel = {
   findDrop: bodySegment,
   impactSpeed: (trace, mags, seg) => impactSpeedOf(trace, mags, seg.descentStart, seg.impact),
   quality: ({ jitter, stopTime }, ref) => scoreRep({ jitter, stopTime }, ref),
+  axes: { peakOverV: 'hardness', stopTime: 'hardness', bounceRatio: 'springiness' },
 };
 
 /** Nominal release height in m, from the trace rig or the default rig. */
@@ -230,6 +235,8 @@ const freeFall: DropModel = {
     if (tilt < 1) issues.push('tilted-landing');
     return { weight: base.weight * flight * tilt, issues };
   },
+  // Raw peak: the rig's speed is nominal and its stop time is the lobe width, so neither is scored.
+  axes: { peak: 'hardness', bounceRatio: 'springiness' },
 };
 
 export const DROP_MODELS: Record<DropModelName, DropModel> = { body, 'free-fall': freeFall };
