@@ -1,5 +1,5 @@
 import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
-import { FEATURES } from './features-table';
+import { featuresOf } from './features-table';
 import { relFloorOf } from './routine';
 import { summarize } from './summarize';
 import { scaledMad, weightedMedian } from './math';
@@ -22,8 +22,8 @@ const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
 };
 
 /** What a rep is judged by against the person's other reps: the scored features, lean and impact speed. */
-const JUDGED: readonly { value: (r: OkRep) => number; absFloor: number }[] = [
-  ...FEATURES.filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
+const judgedOf = (routine: Routine): readonly { value: (r: OkRep) => number; absFloor: number }[] => [
+  ...featuresOf(routine).filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
     value: (r: OkRep) => r.features[name],
     absFloor,
   })),
@@ -33,9 +33,9 @@ const JUDGED: readonly { value: (r: OkRep) => number; absFloor: number }[] = [
 ];
 
 /** How many scaled MADs the rep's farthest judged value sits from the median, floored like the verdict. */
-function outlierScore(rep: OkRep, kept: readonly OkRep[], relFloor: number): number {
+function outlierScore(rep: OkRep, kept: readonly OkRep[], relFloor: number, judged: ReturnType<typeof judgedOf>): number {
   return Math.max(
-    ...JUDGED.map(({ value, absFloor }) => {
+    ...judged.map(({ value, absFloor }) => {
       const s = stats(kept.map(value), kept.map((r) => r.weight));
       return Math.abs(value(rep) - s.center) / Math.max(s.mad, relFloor * Math.abs(s.center), absFloor);
     }),
@@ -53,11 +53,12 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
   const relFloor = relFloorOf(routine);
+  const judged = judgedOf(routine);
   const dropped: OkRep[] = [];
   if (kept.length >= DROP_FROM_REPS) {
     // Farthest first, one at a time, so a dropped rep stops skewing the median that judges the next.
     while (kept.length > MIN_REPS) {
-      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloor) }));
+      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloor, judged) }));
       const worst = scored.reduce((a, b) => (b.score > a.score ? b : a));
       if (worst.score <= OUTLIER_MADS) break;
       dropped.push(worst.r);
