@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Coach } from '../coach';
 import type { Cue, Sample, Trace } from '../domain';
 import { createReplaySource, parseRecording } from '../sensors';
-import { routineSpec } from '../signal';
+import { DEFAULT_RIG, analyzeRep, routineSpec } from '../signal';
 import type { SensorSource } from '../sensors';
 import type { Store } from '../store';
 import { startApp } from './index';
@@ -253,6 +253,60 @@ describe('startApp', () => {
     // The window keeps a margin beyond preRollS + captureS so a late drop is still recorded.
     const span = recording.traces[0]!.samples.at(-1)!.t - recording.traces[0]!.samples[0]!.t;
     expect(span).toBeGreaterThan(spec.preRollS + spec.captureS);
+  });
+
+  describe('rig-drop capture', () => {
+    async function captureRig(setup: (root: HTMLElement) => void): Promise<Trace[]> {
+      vi.useFakeTimers();
+      const exported: Blob[] = [];
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+        exported.push(blob as Blob);
+        return 'blob:test';
+      });
+      const root = document.createElement('main');
+      document.body.append(root);
+      window.location.hash = '#/capture';
+      startApp(root, {
+        source: createReplaySource(replayTrace(), { realtime: true }),
+        store: store(),
+        makeCoach: coach,
+        now: () => new Date('2026-10-24T16:00:00.000Z'),
+        device: 'Replay phone',
+        newId: () => 'test-id',
+      });
+      const routine = root.querySelector<HTMLSelectElement>('[name="routine"]');
+      expect(routine).not.toBeNull();
+      if (routine) {
+        routine.value = 'rig-drop';
+        routine.dispatchEvent(new Event('change'));
+      }
+      setup(root);
+      root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+      await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+      return parseRecording(JSON.parse(await exported[0]!.text())).traces;
+    }
+
+    it('records the default rig on each rig-drop trace', async () => {
+      const traces = await captureRig(() => {});
+      expect(traces).toHaveLength(5);
+      for (const trace of traces) {
+        expect(trace.routine).toBe('rig-drop');
+        expect(trace.rig).toEqual(DEFAULT_RIG);
+        expect(() => analyzeRep(trace)).not.toThrow();
+      }
+    });
+
+    it('records the mass, height and spot the user sets', async () => {
+      const traces = await captureRig((root) => {
+        const set = (name: string, value: string) => {
+          root.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)!.value = value;
+        };
+        set('massKg', '2.5');
+        set('dropHeightCm', '7');
+        set('spot', 'seat-middle');
+      });
+      expect(traces[0]!.rig).toEqual({ ...DEFAULT_RIG, massKg: 2.5, dropHeightCm: 7, spot: 'seat-middle' });
+    });
   });
 
   it('shows the measured sample rate and event interval', async () => {
