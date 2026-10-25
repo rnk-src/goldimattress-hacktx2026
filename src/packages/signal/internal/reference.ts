@@ -4,6 +4,8 @@ import { scaledMad, weightedMedian } from './math';
 
 /** A rep with at least this weight counts toward a reference and a verdict. */
 export const USABLE_WEIGHT = 0.5;
+/** True for a valid rep with enough weight to count. */
+export const isUsable = (r: RepResult): boolean => r.ok && r.weight >= USABLE_WEIGHT;
 const MIN_REPS = 3;
 /** Outliers are only dropped from this many usable reps up. */
 const DROP_FROM_REPS = 5;

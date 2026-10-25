@@ -1,7 +1,7 @@
 import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
 import { GRAVITY } from './constants';
 import { repFeatures } from './features';
-import { assessHover } from './hover';
+import { DROP_JITTER, assessHover } from './hover';
 import { estimateRate, integrate, magnitude } from './math';
 import { routineSpec } from './routine';
 import { scoreRep } from './score';
@@ -162,7 +162,7 @@ function drops(trace: Trace, mags: readonly number[]): Segments[] {
 function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
   const candidates = drops(trace, mags);
   const still = candidates.find(
-    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine).still,
+    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, undefined, DROP_JITTER).still,
   );
   const chosen = still ?? candidates[0];
   if (chosen === undefined) return 'no-drop-found';
@@ -194,7 +194,7 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   const seg = segment(trace, mags);
   if (typeof seg === 'string') return reject(trace, [seg]);
 
-  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine);
+  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, undefined, DROP_JITTER);
   // Only a hover too violent to be a hover is dropped; the rest of the hover quality is scored below.
   const early: RejectReason[] = assessment.still ? [] : ['not-still'];
   if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
