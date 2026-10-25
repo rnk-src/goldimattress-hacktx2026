@@ -72,10 +72,20 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     const spec = routineSpec(routine());
     placement.innerHTML = `<p>${PLACEMENT[routine()].text}</p><p>Stay still for ${spec.captureS} s after each drop. Rest ${spec.restS} s between reps. Do ${CALIBRATION_REPS} good reps.</p>`;
   };
+  const clearProgress = () => {
+    result.hidden = true;
+    rejectedList.replaceChildren();
+    dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
+  };
   showPlacement();
-  routineSelect.addEventListener('change', showPlacement);
+  routineSelect.addEventListener('change', () => {
+    showPlacement();
+    clearProgress();
+  });
 
   const finish = () => {
+    button.disabled = false;
+    routineSelect.disabled = false;
     running = false;
     deps.source.stop();
     void getCoach().keepAwake(false);
@@ -130,9 +140,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       return;
     }
     routineSelect.disabled = true;
-    result.hidden = true;
-    rejectedList.replaceChildren();
-    dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
+    clearProgress();
     session = createRepSession({ routine: routine(), goal: CALIBRATION_REPS });
     running = true;
     void coach.keepAwake(true);

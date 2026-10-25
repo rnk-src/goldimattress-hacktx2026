@@ -82,6 +82,22 @@ describe('calibrate screen', () => {
     expect(result?.textContent).toContain('peakOverV');
   });
 
+  it('lets the user retry or switch routine after a run, clearing the old progress', async () => {
+    const { root } = mount(createReplaySource(traceOf(goodStream([{ failure: 'caught-landing' }]))));
+    const start = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
+    const select = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+    start.click();
+    await flush();
+    expect(start.disabled).toBe(false);
+    expect(select.disabled).toBe(false);
+
+    select.value = 'bridge-drop';
+    select.dispatchEvent(new Event('change'));
+    expect(root.querySelectorAll('[data-rep-dots] li[data-state="accepted"]')).toHaveLength(0);
+    expect(root.querySelector('[data-rejected-reps]')?.children).toHaveLength(0);
+    expect(root.querySelector<HTMLElement>('[data-calibration-result]')?.hidden).toBe(true);
+  });
+
   it('shows the fix for a rejected rep and does not fill a dot for it', async () => {
     const stream = goodStream([{ failure: 'caught-landing' }]);
     const { root } = mount(createReplaySource(traceOf(stream)));
