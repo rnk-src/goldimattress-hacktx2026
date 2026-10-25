@@ -64,6 +64,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const button = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
   const result = root.querySelector<HTMLElement>('[data-calibration-result]')!;
   let running = false;
+  let mounted = true;
   let session: RepSession | undefined;
 
   const routine = () => routineSelect.value as Routine;
@@ -119,6 +120,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     } catch {
       access = 'denied' as const;
     }
+    if (!mounted) return;
     if (access !== 'granted') {
       cueText.textContent =
         access === 'denied'
@@ -138,6 +140,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   });
 
   return () => {
+    mounted = false;
     session?.abort();
     if (running) finish();
   };

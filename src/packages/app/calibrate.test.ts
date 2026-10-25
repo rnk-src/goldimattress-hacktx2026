@@ -109,6 +109,27 @@ describe('calibrate screen', () => {
     expect(start?.disabled).toBe(false);
   });
 
+  it('does not start anything when the user leaves before motion access resolves', async () => {
+    let grant: (a: 'granted') => void = () => {};
+    let starts = 0;
+    const source: SensorSource = {
+      requestAccess: () => new Promise((resolve) => void (grant = resolve)),
+      start() {
+        starts += 1;
+      },
+      stop() {},
+      sampleRateHz: null,
+    };
+    const { root, awake } = mount(source);
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    window.location.hash = '#/permission';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    grant('granted');
+    await flush();
+    expect(starts).toBe(0);
+    expect(awake).toEqual([]);
+  });
+
   it('shows the bridge-drop placement and rest time from the routine spec', () => {
     const { root } = mount(createReplaySource(traceOf([])));
     const select = root.querySelector<HTMLSelectElement>('select[name="routine"]');
