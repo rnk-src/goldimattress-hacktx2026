@@ -1,0 +1,79 @@
+import type { RejectReason, Trace } from '../../domain';
+import { FALL_ACCEL, GRAVITY } from './constants';
+import { firstPeakAfter, hoverFromOf, lowRuns, riseStart } from './drop-model';
+import type { DropModel, Segments } from './drop-model';
+import { DEFAULT_RIG } from './rig';
+import { clamp, magnitude, meanVector } from './math';
+import { combine, factor, jitterScore, ramp } from './score';
+
+/** Fewest samples in a free fall. A 5 cm fall is about 6 samples at 57 Hz. */
+const MIN_FALL_SAMPLES = 3;
+/** The fall time may differ from sqrt(2h/g) by this share before the weight drops: timing is good to about 17% at 5 cm. */
+const FLIGHT_TOL = 0.25;
+/** Fall-time error beyond FLIGHT_TOL at which the weight reaches 0. */
+const FLIGHT_FALL = 0.25;
+/** The landing may tilt this far from the hover orientation, degrees, before the weight drops. */
+const TILT_FREE_DEG = 5;
+/** Tilt beyond TILT_FREE_DEG at which the weight reaches 0, degrees. */
+const TILT_FALL_DEG = 10;
+/** The rest orientation is the mean of the last REST_WINDOW_S of the trace, s. */
+const REST_WINDOW_S = 0.3;
+
+/**
+ * The first run of at least MIN_FALL_SAMPLES samples below FALL_ACCEL that a rise above the impact threshold
+ * follows. `flightS` is the run's length. The first still-to-fall change is the release, so no dip length is needed.
+ * shortcut: FALL_ACCEL (see constants.ts) is a guess, re-check on real rig data.
+ */
+function freeFallDrop(trace: Trace, mags: readonly number[], hoverMinS: number): { seg: Segments; flightS: number } | RejectReason {
+  const { samples } = trace;
+  for (const { start, end } of lowRuns(mags, FALL_ACCEL)) {
+    const count = end - start + 1;
+    const peak = count >= MIN_FALL_SAMPLES ? firstPeakAfter(samples, mags, end) : -1;
+    if (peak < 0) continue;
+    const flightS = ((samples[end]!.t - samples[start]!.t) * count) / (count - 1);
+    const seg = { impact: riseStart(mags, end, peak), descentStart: start, hoverFrom: hoverFromOf(trace, start, hoverMinS) };
+    return { seg, flightS };
+  }
+  return 'no-drop-found';
+}
+
+/** Degrees between the hover orientation and the rest orientation after the landing, or null when either has no direction. */
+function landingTiltDeg(trace: Trace, seg: Segments): number | null {
+  const { samples } = trace;
+  const restFrom = samples[samples.length - 1]!.t - REST_WINDOW_S;
+  const hover = meanVector(samples.slice(seg.hoverFrom, seg.descentStart));
+  const rest = meanVector(samples.filter((s) => s.t >= restFrom && s.t > samples[seg.impact]!.t));
+  const cos = (hover.ax * rest.ax + hover.ay * rest.ay + hover.az * rest.az) / (magnitude(hover) * magnitude(rest));
+  // An empty window gives NaN, a zero vector gives 0/0: either way there is no direction.
+  return Number.isFinite(cos) ? (Math.acos(clamp(cos, -1, 1)) * 180) / Math.PI : null;
+}
+
+/** Nominal release height in m, from the trace rig or the default rig. */
+const rigHeightM = (trace: Trace) => (trace.rig ?? DEFAULT_RIG).dropHeightCm / 100;
+
+export const freeFall: DropModel = {
+  findDrop(trace, mags, ctx) {
+    const found = freeFallDrop(trace, mags, ctx.hoverMinS);
+    if (typeof found === 'string') return found;
+    const { seg, flightS } = found;
+    return {
+      seg,
+      flightS,
+      impactSpeed: () => Math.sqrt(2 * GRAVITY * rigHeightM(trace)),
+      quality({ jitter }, ref) {
+        const expectedS = Math.sqrt((2 * rigHeightM(trace)) / GRAVITY);
+        const tilt = landingTiltDeg(trace, seg);
+        return combine(
+          jitterScore(jitter, ref),
+          factor(ramp(Math.abs(flightS / expectedS - 1) - FLIGHT_TOL, FLIGHT_FALL), 'flight-mismatch'),
+          // A landing that cannot be measured cannot be called level, so it scores 0.
+          factor(tilt === null ? 0 : ramp(tilt - TILT_FREE_DEG, TILT_FALL_DEG), 'tilted-landing'),
+        );
+      },
+      // Raw peak is scored; the rig's speed is nominal and its stop time is the lobe width, so neither is.
+    };
+  },
+  axes: { peak: 'hardness', bounceRatio: 'springiness' },
+  relFloor: 0.05,
+  signedLean: true,
+};
