@@ -10,6 +10,12 @@ describe('loadFixture', () => {
     expect(rec.traces[0]!.samples).toHaveLength(3);
   });
 
+  it('reads the real desk-chair recording as five sit-drops', () => {
+    const rec = loadFixture('desk-chair-set1');
+    expect(rec.traces).toHaveLength(5);
+    expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
+  });
+
   it('names the fixture when it does not exist', () => {
     expect(() => loadFixture('no-such-fixture')).toThrow(/no-such-fixture/);
   });
