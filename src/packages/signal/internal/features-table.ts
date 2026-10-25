@@ -1,6 +1,6 @@
 import type { FeatureName, Routine } from '../../domain';
 import type { Axis } from './drop-model';
-import { DROP_MODELS, dropModelOf } from './routine';
+import { profileOf } from './routine';
 
 /**
  * One row per feature. `sign` is +1 when a higher value means firmer (hardness) or springier (springiness).
@@ -20,6 +20,6 @@ export const FEATURES: readonly { name: FeatureName; absFloor: number; sign: 1 |
 
 /** `FEATURES` with the axis each feature scores under the routine's drop model (null: reported, not scored). */
 export function featuresOf(routine: Routine): (typeof FEATURES[number] & { axis: Axis | null })[] {
-  const { axes } = DROP_MODELS[dropModelOf(routine)];
+  const { axes } = profileOf(routine).model;
   return FEATURES.map((f) => ({ ...f, axis: axes[f.name] ?? null }));
 }

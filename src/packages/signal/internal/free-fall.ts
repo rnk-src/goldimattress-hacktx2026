@@ -85,4 +85,6 @@ export const freeFall: DropModel = {
     };
   },
   axes: { peak: 'hardness', bounceRatio: 'springiness' },
+  relFloor: 0.05,
+  signedLean: true,
 };

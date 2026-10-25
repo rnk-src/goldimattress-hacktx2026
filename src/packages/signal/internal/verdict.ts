@@ -1,7 +1,7 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
 import { featuresOf } from './features-table';
 import { weightedMedian } from './math';
-import { relFloorOf } from './routine';
+import { profileOf } from './routine';
 import { summarize } from './summarize';
 import { isUsable } from './reference';
 
@@ -47,7 +47,7 @@ export function compare(
   const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
   const summary = summarize(usable);
-  const relFloor = relFloorOf(ref.routine);
+  const { relFloor } = profileOf(ref.routine).model;
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of featuresOf(ref.routine)) {

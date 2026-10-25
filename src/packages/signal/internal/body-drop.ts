@@ -104,4 +104,6 @@ export const body: DropModel = {
     };
   },
   axes: { peakOverV: 'hardness', stopTime: 'hardness', bounceRatio: 'springiness' },
+  relFloor: 0.08,
+  signedLean: false,
 };

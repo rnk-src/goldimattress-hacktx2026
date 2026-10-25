@@ -4,7 +4,7 @@ import type { FoundDrop } from './drop-model';
 import { repFeatures } from './features';
 import { DROP_JITTER, assessHover } from './hover';
 import { estimateRate, magnitude } from './math';
-import { DROP_MODELS, dropModelOf, routineSpec } from './routine';
+import { profileOf } from './routine';
 
 /**
  * A drop slower than this is not a drop, m/s. Real accepted reps measured 0.35 to 1.13; a rep that read 0.10 had
@@ -66,10 +66,10 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (estimateRate(trace.samples.map((s) => s.t)) < MIN_RATE_HZ) {
     return reject(trace, ['low-sample-rate']);
   }
-  const model = DROP_MODELS[dropModelOf(trace.routine)];
+  const { spec, model } = profileOf(trace.routine);
   const mags = trace.samples.map(magnitude);
   const found = model.findDrop(trace, mags, {
-    hoverMinS: routineSpec(trace.routine).hoverMinS,
+    hoverMinS: spec.hoverMinS,
     isStill: (window) => assessHover(window, trace.routine, DROP_JITTER).still,
   });
   if (typeof found === 'string') return reject(trace, [found]);
