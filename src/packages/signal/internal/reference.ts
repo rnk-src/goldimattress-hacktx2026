@@ -21,15 +21,23 @@ const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
   return { median, mad: scaledMad(xs, ws, median) };
 };
 
-/** How many scaled MADs the rep's farthest feature sits from the median, floored like the verdict. */
+/** What a rep is judged by against the person's other reps: the scored features, lean and impact speed. */
+const JUDGED: readonly { value: (r: OkRep) => number; absFloor: number }[] = [
+  ...FEATURES.filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
+    value: (r: OkRep) => r.features[name],
+    absFloor,
+  })),
+  // shortcut: floors of 5 degrees and 0.05 m/s are guesses from three real sets, tune with sloppy sets.
+  { value: (r) => r.leanDeg, absFloor: 5 },
+  { value: (r) => r.impactSpeed, absFloor: 0.05 },
+];
+
+/** How many scaled MADs the rep's farthest judged value sits from the median, floored like the verdict. */
 function outlierScore(rep: OkRep, kept: readonly OkRep[]): number {
   return Math.max(
-    ...FEATURES.map(({ name, absFloor }) => {
-      const s = stats(
-        kept.map((r) => r.features[name]),
-        kept.map((r) => r.weight),
-      );
-      return Math.abs(rep.features[name] - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), absFloor);
+    ...JUDGED.map(({ value, absFloor }) => {
+      const s = stats(kept.map(value), kept.map((r) => r.weight));
+      return Math.abs(value(rep) - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), absFloor);
     }),
   );
 }

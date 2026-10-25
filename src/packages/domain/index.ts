@@ -42,10 +42,6 @@ export type FeatureName = keyof RepFeatures;
 
 export type RejectReason =
   | 'not-still'
-  | 'lean-too-much'
-  | 'lean-too-little'
-  | 'too-fast'
-  | 'too-slow'
   | 'caught-landing'
   | 'left-surface'
   | 'no-drop-found'
@@ -62,7 +58,7 @@ export type RepResult =
       hoverJitter: number;
       /** Quality weight, 0..1. A rep is usable at 0.5 or more. */
       weight: number;
-      /** What lowered the weight, as the fix to show: lean, speed, hold still, relax. Empty at weight 1. */
+      /** What lowered the weight, as the fix to show: hold still or relax the legs. Empty at weight 1. */
       issues: RejectReason[];
       /** Seconds the person rested before this rep. Set by the session, not by `analyzeRep`. Unset for the first rep. */
       restS?: number;
@@ -86,7 +82,6 @@ export interface RoutineSpec {
   preRollS: number;
   captureS: number;
   restS: number;
-  leanTolDeg: number;
 }
 
 export interface FeatureStats {
@@ -173,8 +168,6 @@ export type LiveState =
 export type CueKey =
   | 'place-phone'
   | 'hold-still'
-  | 'lean-less'
-  | 'lean-more'
   | 'drop-when-ready'
   | 'captured'
   | 'rep-accepted'
