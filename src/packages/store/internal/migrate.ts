@@ -44,7 +44,7 @@ function isValidV1(data: Record<string, unknown>): boolean {
       (p) =>
         isObject(p) &&
         isObject(p.references) &&
-        Object.values(p.references).every((ref) => isObject(ref) && areReps(ref.reps)),
+        Object.values(p.references).every((ref) => isObject(ref) && isObject(ref.stats) && areReps(ref.reps)),
     ) &&
     tests.every((t) => isObject(t) && areReps(t.reps))
   );
@@ -78,7 +78,14 @@ export function readStoredState(raw: string | null): { data: StoredData; corrupt
     return { data: emptyStored(), corrupt: true };
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version === undefined) return { data: migrateV0(data as Parameters<typeof migrateV0>[0]), corrupt: false };
+  if (data.version === undefined) {
+    try {
+      return { data: migrateV0(data as Parameters<typeof migrateV0>[0]), corrupt: false };
+    } catch {
+      // Old data of the wrong shape (a person without references, a test without reps) is as unreadable as bad JSON.
+      return { data: emptyStored(), corrupt: true };
+    }
+  }
   if (data.version === 1 && isValidV1(data)) return { data: data as unknown as StoredData, corrupt: false };
   return { data: emptyStored(), corrupt: true };
 }

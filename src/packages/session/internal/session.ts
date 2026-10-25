@@ -30,6 +30,10 @@ export interface RepSession {
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
 const MAX_ATTEMPTS = 10;
+/** Usable reps that finish a session. */
+export const GOAL_REPS = 5;
+/** Usable reps from which the user may finish early, and below which a session is a retry. */
+export const MIN_REPS = 3;
 const LOW_CONFIDENCE_TEXT = 'Session complete with low confidence.';
 // shortcut: duplicates signal's 1 m/s² drop ceiling, export the shared threshold if either package retunes it.
 const SCOREABLE_JITTER = 1;
@@ -53,7 +57,6 @@ export const positionCue = (event: 'off' | 'ok'): Cue => CUES[event === 'off' ? 
 
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
-  const goal = 5;
   const restText = `Rest for ${spec.restS} seconds. Do not drop yet.`;
   let restEndT = 0;
   let restStartedT = 0;
@@ -121,12 +124,12 @@ export function createRepSession(opts: SessionOptions): RepSession {
     out.push({ kind: 'rep', result });
     if (usable) cue('rep-accepted', out);
     else cue('rep-rejected', out, rejectMessage((result.ok ? result.issues : result.reasons)[0]!), true);
-    if (accepted >= goal) {
+    if (accepted >= GOAL_REPS) {
       finish(out, 'complete');
       return;
     }
     if (reps.length >= MAX_ATTEMPTS) {
-      if (accepted >= 3) finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
+      if (accepted >= MIN_REPS) finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
       else finish(out, 'retry', 'This technique or surface is not working. Try again when you are ready.');
       return;
     }
@@ -194,7 +197,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
     },
     finishNow() {
       const out: SessionEvent[] = [];
-      if (aborted || state === 'done' || state === 'capturing' || accepted < 3) return out;
+      if (aborted || state === 'done' || state === 'capturing' || accepted < MIN_REPS) return out;
       finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
       return out;
     },
