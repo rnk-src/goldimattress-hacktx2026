@@ -2,7 +2,8 @@ import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
 import type { Access } from '../../sensors';
-import { routineSpec } from '../../signal';
+import { positionCue } from '../../session';
+import { assessHover, createPositionTracker, routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
 import { shortDeviceModel, withRepMetadata } from './metadata';
 import { mountProfileScreen } from './profile';
@@ -103,6 +104,10 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
   });
 }
 
+/** The phone angle is read from this much recent time, and only once it holds this many samples, s. */
+const POSITION_WINDOW_S = 0.5;
+const POSITION_MIN_SAMPLES = 10;
+
 function captureView(
   root: HTMLElement,
   deps: AppDeps,
@@ -124,6 +129,7 @@ function captureView(
           <p data-rep-label class="rep-label">Rep 1 of ${REPS}</p>
           <p data-countdown class="countdown"></p>
           <p data-capture-status class="cue-panel__text" role="status" aria-live="polite">Ready for ${REPS} repetitions.</p>
+          <p data-phone-position data-state="idle" class="cue-panel__text" role="status" aria-live="polite">Phone angle appears here once the capture starts.</p>
           <ol class="repetition-rail" data-repetition-progress aria-label="Capture progress">
             ${Array.from({ length: REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span><span class="sr-only">Repetition ${i + 1}</span></li>`).join('')}
           </ol>
@@ -157,6 +163,7 @@ function captureView(
   const sound = root.querySelector<HTMLButtonElement>('[data-action="toggle-sound"]');
   const countdown = root.querySelector<HTMLElement>('[data-countdown]');
   const repLabel = root.querySelector<HTMLElement>('[data-rep-label]');
+  const position = root.querySelector<HTMLElement>('[data-phone-position]');
   let muted = false;
   let running = false;
   let exportUrl: string | undefined;
@@ -172,10 +179,31 @@ function captureView(
     let startedAt = '';
     let received = 0;
     let aborted = false;
+    const tracker = createPositionTracker('sit-drop');
+    /** The last half second of samples outside a drop window, to read the phone angle from. */
+    const recent: Sample[] = [];
+    const judgePosition = (sample: Sample) => {
+      recent.push(sample);
+      while (recent[0]!.t < sample.t - POSITION_WINDOW_S) recent.shift();
+      if (recent.length < POSITION_MIN_SAMPLES) return;
+      const hover = assessHover(recent, 'sit-drop');
+      // A phone being picked up or set down has no angle to judge.
+      if (!hover.still) return;
+      const angle = Math.round(hover.leanDeg);
+      const placed = tracker.update(angle);
+      if (position) {
+        position.dataset.state = placed.off ? 'off' : 'ok';
+        position.textContent = placed.off
+          ? `Phone angle ${angle}°. Hold it upright against your breastbone, screen facing out.`
+          : `Phone angle ${angle}°. Good.`;
+      }
+      if (placed.event) getCoach().play(positionCue(placed.event));
+    };
     try {
       deps.source.start((sample) => {
         received += 1;
-        activeSamples?.push(sample);
+        if (activeSamples) activeSamples.push(sample);
+        else judgePosition(sample);
         const rate = deps.source.sampleRateHz;
         if (rate !== null) {
           if (sampleRate) sampleRate.textContent = `${rate.toFixed(1)} Hz`;
@@ -275,6 +303,7 @@ function captureView(
         else item.removeAttribute('aria-current');
       });
       activeSamples = [];
+      recent.length = 0;
       startedAt = deps.now().toISOString();
       const readyText = `Repetition ${repetition} of ${REPS}. Recording for ${WINDOW_S} seconds.`;
       if (status) status.textContent = readyText;

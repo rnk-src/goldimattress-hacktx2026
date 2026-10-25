@@ -1,5 +1,5 @@
 import type { Cue, CueKey, LiveState, ReferenceStats, RepResult, Routine, Sample } from '../../domain';
-import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, isUsable, routineSpec } from '../../signal';
+import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, createPositionTracker, isUsable, routineSpec } from '../../signal';
 import { rejectMessage } from './messages';
 
 export interface SessionOptions {
@@ -37,8 +37,8 @@ const SCOREABLE_JITTER = 1;
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
   'hold-still': { key: 'hold-still', text: 'Hold still.' },
-  'lean-less': { key: 'lean-less', text: rejectMessage('lean-too-much') },
-  'lean-more': { key: 'lean-more', text: rejectMessage('lean-too-little') },
+  'phone-off': { key: 'phone-off', text: 'Hold the phone upright against your breastbone, screen facing out.' },
+  'phone-ok': { key: 'phone-ok', text: 'Phone position good. Hold still.' },
   'drop-when-ready': { key: 'drop-when-ready', text: 'Relax your legs and drop.', beep: 'ready' },
   captured: { key: 'captured', text: 'Drop detected. Stay still and hold your breath.', beep: 'captured' },
   'rep-accepted': { key: 'rep-accepted', text: 'Good rep.', beep: 'accepted' },
@@ -47,6 +47,9 @@ const CUES: Record<CueKey, Cue> = {
   'next-rep': { key: 'next-rep', text: 'Get ready for the next rep.' },
   done: { key: 'done', text: 'All reps done.' },
 };
+
+/** The cue for a phone-position event from `createPositionTracker`. */
+export const positionCue = (event: 'off' | 'ok'): Cue => CUES[event === 'off' ? 'phone-off' : 'phone-ok'];
 
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
@@ -60,6 +63,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
   let aborted = false;
   /** Time of the first evaluation in the current unbroken run of still hovers. */
   let stillSince: number | undefined;
+  const position = createPositionTracker(opts.routine);
   let state: LiveState = 'idle';
   let lastCue: CueKey | undefined;
   let buffer: Sample[] = [];
@@ -159,7 +163,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       }
       const recent = buffer.filter((w) => s.t - w.t <= spec.hoverMinS + EPS);
       if (recent[0]!.t > s.t - spec.hoverMinS + EPS) return out;
-      const hover = assessHover(recent, opts.routine, opts.ref, SCOREABLE_JITTER);
+      const hover = assessHover(recent, opts.routine, SCOREABLE_JITTER);
       if (!hover.still) {
         stillSince = undefined;
         if (state === 'armed') {
@@ -173,6 +177,14 @@ export function createRepSession(opts: SessionOptions): RepSession {
         cue('hold-still', out);
         return out;
       }
+      const placed = position.update(hover.leanDeg);
+      if (placed.off) {
+        stillSince = undefined;
+        setState('holding', out);
+        cue('phone-off', out);
+        return out;
+      }
+      if (placed.event === 'ok') cue('phone-ok', out);
       // A wobbling hover can pass single windows, so arm only after a sustained run of still ones.
       stillSince ??= s.t;
       if (s.t - stillSince < spec.hoverMinS - EPS) return out;
