@@ -22,8 +22,8 @@ describe('loadFixture', () => {
     expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
   });
 
-  it('reads the real thin-cushion chair recording as five sit-drops without the user agent', () => {
-    const rec = loadFixture('thin-cushion-chair-set1');
+  it('reads the real mesh chair recording as five sit-drops without the user agent', () => {
+    const rec = loadFixture('mesh-chair-set1');
     expect(rec.traces).toHaveLength(5);
     expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
     expect(rec.traces.every((t) => !t.device.includes('Mozilla'))).toBe(true);
