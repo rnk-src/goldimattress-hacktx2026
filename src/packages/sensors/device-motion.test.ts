@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Sample } from '../domain';
 import { createDeviceMotionSource } from './index';
 
@@ -86,5 +86,39 @@ describe('createDeviceMotionSource', () => {
 
     target.dispatchEvent(motionEvent(380, 1, 2, 3));
     expect(source.sampleRateHz).toBeCloseTo(50);
+  });
+});
+
+describe('createDeviceMotionSource without an env', () => {
+  const win = window as unknown as { DeviceMotionEvent?: unknown };
+  afterEach(() => {
+    delete win.DeviceMotionEvent;
+  });
+
+  it('reports unsupported when the browser has no DeviceMotionEvent', async () => {
+    delete win.DeviceMotionEvent;
+    await expect(createDeviceMotionSource().requestAccess()).resolves.toBe('unsupported');
+  });
+
+  it('uses the browser iOS permission function and listens on window', async () => {
+    let asked = 0;
+    win.DeviceMotionEvent = {
+      requestPermission() {
+        asked += 1;
+        return Promise.resolve('granted');
+      },
+    };
+    const source = createDeviceMotionSource();
+    await expect(source.requestAccess()).resolves.toBe('granted');
+    const got: Sample[] = [];
+    source.start((s) => got.push(s));
+    window.dispatchEvent(motionEvent(1000, 1, 2, 3));
+    expect(asked).toBe(1);
+    expect(got).toEqual([{ t: 1, ax: 1, ay: 2, az: 3 }]);
+  });
+
+  it('grants access without a prompt when the permission method is absent', async () => {
+    win.DeviceMotionEvent = function DeviceMotionEvent() {};
+    await expect(createDeviceMotionSource().requestAccess()).resolves.toBe('granted');
   });
 });
