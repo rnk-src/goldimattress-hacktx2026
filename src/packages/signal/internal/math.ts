@@ -72,3 +72,25 @@ export function smooth3(ys: readonly number[]): number[] {
     return window.reduce((sum, y) => sum + y, 0) / window.length;
   });
 }
+
+/**
+ * Mean of `xs` after dropping the lowest and highest `trim` share of the total weight. A value on the cut line is split.
+ * Falls back to the weighted median below `minReps` values.
+ */
+export function weightedTrimmedMean(xs: readonly number[], ws: readonly number[], trim: number, minReps: number): number {
+  if (xs.length < minReps) return weightedMedian(xs, ws);
+  const order = xs.map((x, i) => ({ x, w: ws[i]! })).sort((a, b) => a.x - b.x);
+  const total = order.reduce((sum, o) => sum + o.w, 0);
+  const lo = trim * total;
+  const hi = (1 - trim) * total;
+  let cum = 0;
+  let kept = 0;
+  let sum = 0;
+  for (const { x, w } of order) {
+    const w2 = Math.max(0, Math.min(cum + w, hi) - Math.max(cum, lo));
+    kept += w2;
+    sum += w2 * x;
+    cum += w;
+  }
+  return sum / kept;
+}
