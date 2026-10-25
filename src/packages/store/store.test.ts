@@ -168,7 +168,7 @@ describe('trace encoding', () => {
   it('returns reference reps stored on a person', async () => {
     const trace = synthRep({ seed: 4 });
     const store = createLocalStore(memoryStorage());
-    const stats = { median: 1, mad: 0.1 };
+    const stats = { center: 1, mad: 0.1 };
     const reference = {
       stats: {
         routine: 'sit-drop' as const,
@@ -251,13 +251,37 @@ describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
   const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
-  it('stamps what it writes with schema version 1', async () => {
+  it('stamps what it writes with schema version 2', async () => {
     const storage = memoryStorage();
     await createLocalStore(storage).savePerson(person('p1'));
-    expect(JSON.parse(storage.getItem(KEY)!)).toMatchObject({ version: 1 });
+    expect(JSON.parse(storage.getItem(KEY)!)).toMatchObject({ version: 2 });
   });
 
-  it('migrates unversioned v0 data (raw per-sample traces) and rewrites it as v1', async () => {
+  it('migrates v1 references by renaming median to center and keeping every value', async () => {
+    const storage = memoryStorage();
+    const s = (median: number) => ({ median, mad: 0.1 });
+    const old = {
+      routine: 'sit-drop',
+      repCount: 5,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      features: { peak: s(12), peakOverV: s(20), stopTime: s(0.1), bounceRatio: s(0.4), settleTime: s(1.5) },
+      leanDeg: s(15),
+      impactSpeed: s(0.6),
+      jitterScale: 0.1,
+    };
+    const stored = { ...person('p1', 'Ana'), references: { 'sit-drop': { stats: old, reps: [] } } };
+    storage.setItem(KEY, JSON.stringify({ version: 1, people: [stored], surfaces: [], tests: [] }));
+    const store = createLocalStore(storage);
+    const [loaded] = await store.listPeople();
+    const stats = loaded!.references['sit-drop']!.stats;
+    expect(stats.features.peakOverV).toEqual({ center: 20, mad: 0.1 });
+    expect(stats.leanDeg).toEqual({ center: 15, mad: 0.1 });
+    expect(stats.impactSpeed).toEqual({ center: 0.6, mad: 0.1 });
+    await store.savePerson(person('p2'));
+    expect(storage.getItem(KEY)).not.toContain('"median"');
+  });
+
+  it('migrates unversioned v0 data (raw per-sample traces) and rewrites it as v2', async () => {
     const trace = synthRep({ seed: 8 });
     const legacy = {
       people: [person('p1', 'Ana')],
@@ -275,7 +299,7 @@ describe('schema versioning and bad data', () => {
 
     await store.savePerson(person('p2'));
     const rewritten = storage.getItem(KEY)!;
-    expect(JSON.parse(rewritten)).toMatchObject({ version: 1 });
+    expect(JSON.parse(rewritten)).toMatchObject({ version: 2 });
     expect(rewritten).not.toContain('"ax"');
     expect(await store.listTests()).toHaveLength(1);
   });

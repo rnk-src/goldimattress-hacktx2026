@@ -18,8 +18,8 @@ type OkRep = Extract<RepResult, { ok: true }>;
 type Result = { ok: true; ref: ReferenceStats; dropped: number[] } | { ok: false; reason: 'too-few' };
 
 const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
-  const median = weightedMedian(xs, ws);
-  return { median, mad: scaledMad(xs, ws, median) };
+  const center = weightedMedian(xs, ws);
+  return { center, mad: scaledMad(xs, ws, center) };
 };
 
 /** What a rep is judged by against the person's other reps: the scored features, lean and impact speed. */
@@ -38,7 +38,7 @@ function outlierScore(rep: OkRep, kept: readonly OkRep[]): number {
   return Math.max(
     ...JUDGED.map(({ value, absFloor }) => {
       const s = stats(kept.map(value), kept.map((r) => r.weight));
-      return Math.abs(value(rep) - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), absFloor);
+      return Math.abs(value(rep) - s.center) / Math.max(s.mad, REL_FLOOR * Math.abs(s.center), absFloor);
     }),
   );
 }

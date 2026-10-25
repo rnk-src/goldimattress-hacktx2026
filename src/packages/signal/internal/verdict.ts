@@ -51,9 +51,9 @@ export function compare(
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of FEATURES) {
-    const { median: mu, mad } = ref.features[name];
+    const { center: mu, mad } = ref.features[name];
     const sigmaEff = Math.max(mad, floorFactor * Math.max(REL_FLOOR * Math.abs(mu), absFloor));
-    const value = (summary.features[name].median - mu) / sigmaEff;
+    const value = (summary.features[name].center - mu) / sigmaEff;
     z[name] = value;
     if (axis !== null) axes[axis].push(sign * value);
   }
@@ -69,7 +69,7 @@ export function compare(
   else if (straddles(springinessInterval) || (hardnessReliable && straddles(hardnessInterval))) confidence = 'close-call';
 
   const caveats: Caveat[] = [];
-  if (Math.abs(weightedMedian(usable.map((r) => r.leanDeg), weights) - ref.leanDeg.median) > LEAN_CAVEAT_DEG) {
+  if (Math.abs(weightedMedian(usable.map((r) => r.leanDeg), weights) - ref.leanDeg.center) > LEAN_CAVEAT_DEG) {
     caveats.push('lean-differs');
   }
   if (usable.some((r) => r.restSkipped)) caveats.push('rest-skipped');
