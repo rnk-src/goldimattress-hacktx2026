@@ -1,30 +1,19 @@
-import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
+import type { ReferenceStats, RepResult, Routine } from '../../domain';
 import { featuresOf } from './features-table';
 import { profileOf } from './routine';
-import { summarize } from './summarize';
-import { scaledMad, weightedMedian } from './math';
+import { type UsableRep, columnStats, summarize, usableReps } from './summarize';
 
-/** A rep with at least this weight counts toward a reference and a verdict. */
-export const USABLE_WEIGHT = 0.5;
-/** True for a valid rep with enough weight to count. */
-export const isUsable = (r: RepResult): boolean => r.ok && r.weight >= USABLE_WEIGHT;
 const MIN_REPS = 3;
 /** Outliers are only dropped from this many usable reps up. */
 const DROP_FROM_REPS = 5;
 const OUTLIER_MADS = 3;
 
-type OkRep = Extract<RepResult, { ok: true }>;
 type Result = { ok: true; ref: ReferenceStats; dropped: number[] } | { ok: false; reason: 'too-few' };
 
-const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
-  const center = weightedMedian(xs, ws);
-  return { center, mad: scaledMad(xs, ws, center) };
-};
-
 /** What a rep is judged by against the person's other reps: the scored features, lean and impact speed. */
-const judgedOf = (routine: Routine): readonly { value: (r: OkRep) => number; absFloor: number }[] => [
+const judgedOf = (routine: Routine): readonly { value: (r: UsableRep) => number; absFloor: number }[] => [
   ...featuresOf(routine).filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
-    value: (r: OkRep) => r.features[name],
+    value: (r: UsableRep) => r.features[name],
     absFloor,
   })),
   // shortcut: floors of 10 degrees and 0.05 m/s are guesses from three real sets, tune with sloppy sets.
@@ -32,11 +21,14 @@ const judgedOf = (routine: Routine): readonly { value: (r: OkRep) => number; abs
   { value: (r) => r.impactSpeed, absFloor: 0.05 },
 ];
 
-/** How many scaled MADs the rep's farthest judged value sits from the median, floored like the verdict. */
-function outlierScore(rep: OkRep, kept: readonly OkRep[], relFloor: number, judged: ReturnType<typeof judgedOf>): number {
+/**
+ * How many scaled MADs the rep's farthest judged value sits from the centre, floored like the verdict.
+ * The judge uses the same `columnStats` centre as the reference and the verdict, so a rep is judged from the value it would shift.
+ */
+function outlierScore(rep: UsableRep, kept: readonly UsableRep[], relFloor: number, judged: ReturnType<typeof judgedOf>): number {
   return Math.max(
     ...judged.map(({ value, absFloor }) => {
-      const s = stats(kept.map(value), kept.map((r) => r.weight));
+      const s = columnStats(kept.map(value), kept.map((r) => r.weight));
       return Math.abs(value(rep) - s.center) / Math.max(s.mad, relFloor * Math.abs(s.center), absFloor);
     }),
   );
@@ -49,12 +41,12 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
     // The declared failure union has no routine reason, so this throws like compare.
     throw new RangeError(`rep routine does not match ${routine}`);
   }
-  let kept = ok.filter((r) => r.weight >= USABLE_WEIGHT);
+  let kept = usableReps(reps);
   if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
   const { relFloor } = profileOf(routine).model;
   const judged = judgedOf(routine);
-  const dropped: OkRep[] = [];
+  const dropped: UsableRep[] = [];
   if (kept.length >= DROP_FROM_REPS) {
     // Farthest first, one at a time, so a dropped rep stops skewing the median that judges the next.
     while (kept.length > MIN_REPS) {
@@ -66,7 +58,7 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
     }
   }
 
-  const ws = kept.map((r) => r.weight);
+  const summary = summarize(kept);
   return {
     ok: true,
     dropped: dropped.map((r) => reps.indexOf(r)).sort((a, b) => a - b),
@@ -75,10 +67,10 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
       repCount: kept.length,
       // shortcut: createdAt is the last kept rep's trace start, because signal has no clock; the store may overwrite it.
       createdAt: kept[kept.length - 1]!.trace.startedAt,
-      features: summarize(kept).features,
-      leanDeg: stats(kept.map((r) => r.leanDeg), ws),
-      impactSpeed: stats(kept.map((r) => r.impactSpeed), ws),
-      jitterScale: weightedMedian(kept.map((r) => r.hoverJitter), ws),
+      features: summary.features,
+      leanDeg: summary.leanDeg,
+      impactSpeed: summary.impactSpeed,
+      jitterScale: summary.hoverJitter.center,
     },
   };
 }
