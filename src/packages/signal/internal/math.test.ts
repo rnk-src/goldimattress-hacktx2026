@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateRate, findPeaks, integrate, magnitude, smooth3, std } from './math';
+import { estimateRate, findPeaks, integrate, magnitude, smooth3, std, weightedTrimmedMean } from './math';
 
 describe('magnitude', () => {
   it('is the Euclidean norm of the axes', () => {
@@ -83,5 +83,22 @@ describe('smooth3', () => {
   it('keeps the length and handles a single value', () => {
     expect(smooth3([4])).toEqual([4]);
     expect(smooth3([])).toEqual([]);
+  });
+});
+
+describe('weightedTrimmedMean guards', () => {
+  it('throws on zero total weight instead of returning NaN', () => {
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [0, 0, 0, 0, 0], 0.2, 5)).toThrow(RangeError);
+    expect(() => weightedTrimmedMean([1, 2], [0, 0], 0.2, 5)).toThrow(RangeError);
+  });
+
+  it('throws when trim is 0.5 or more', () => {
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1, 1], 0.5, 5)).toThrow(RangeError);
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1, 1], 0.7, 5)).toThrow(RangeError);
+  });
+
+  it('throws when values and weights differ in length', () => {
+    expect(() => weightedTrimmedMean([1, 2, 3], [1, 1], 0.2, 5)).toThrow(RangeError);
+    expect(() => weightedTrimmedMean([1, 2, 3, 4, 5], [1, 1, 1, 1], 0.2, 5)).toThrow(RangeError);
   });
 });
