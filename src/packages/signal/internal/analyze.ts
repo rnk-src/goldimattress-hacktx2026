@@ -6,7 +6,7 @@ import { estimateRate, integrate, magnitude } from './math';
 import { routineSpec } from './routine';
 
 /** |a| this far above 1 g marks the impact, m/s². Above hover wobble, below the weakest real impact. */
-const IMPACT_EXCESS = 1.5;
+export const IMPACT_EXCESS = 1.5;
 /** |a| this far below 1 g counts as the descent, m/s². */
 const DESCENT_DEFICIT = 0.5;
 /** Slack for float error in sample times, s. */
