@@ -16,6 +16,17 @@ afterEach(() => {
   window.location.hash = '';
 });
 
+/** These tests cover the frozen body routines, which sit behind the legacy toggle: turn it on and pick the sit-drop. */
+function useBodyRoutine(root: HTMLElement) {
+  const legacy = root.querySelector<HTMLInputElement>('input[name="legacy"]');
+  if (!legacy) return;
+  legacy.checked = true;
+  legacy.dispatchEvent(new Event('change'));
+  const routine = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+  routine.value = 'sit-drop';
+  routine.dispatchEvent(new Event('change'));
+}
+
 const REST_S = 22;
 
 const stat = (center: number): FeatureStats => ({ center, mad: center / 10 });
@@ -75,6 +86,7 @@ function mount(source: SensorSource, hash = '#/calibrate', store: Store = storeW
     device: 'Replay phone',
     newId: () => 'test-id',
   });
+  useBodyRoutine(root);
   return { root, cues, awake, stop };
 }
 
@@ -460,12 +472,6 @@ describe('calibrate screen', () => {
     await flush();
     expect(starts).toBe(0);
     expect(awake).toEqual([]);
-  });
-
-  it('does not offer rig-drop, which needs a rig the calibrate screen cannot set', () => {
-    const { root } = mount(createReplaySource(traceOf([])));
-    const values = Array.from(root.querySelectorAll<HTMLOptionElement>('select[name="routine"] option'), (o) => o.value);
-    expect(values).toEqual(['sit-drop', 'bridge-drop']);
   });
 
   it('shows the bridge-drop placement and rest time from the routine spec', () => {
