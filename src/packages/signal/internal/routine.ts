@@ -32,3 +32,11 @@ export function routineSpec(routine: Routine): Readonly<RoutineSpec> {
 export function dropModelOf(routine: Routine): DropModelName {
   return SPECS[routine].dropModel;
 }
+
+/**
+ * Share of |μ_ref| below which a spread is treated as noise. The rig drops a fixed mass, so its repeats are tighter than a body's.
+ * shortcut: 5% for the rig and 8% for the body are starting values; tune the rig's on the plate-experiment spread.
+ */
+export function relFloorOf(routine: Routine): number {
+  return routine === 'rig-drop' ? 0.05 : 0.08;
+}
