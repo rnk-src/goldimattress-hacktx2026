@@ -256,6 +256,7 @@ describe('analyzeRep on bad data', () => {
     return result;
   };
   const base = synthRep({ noise: 0 });
+  const hoverOnly = synthRep({ noise: 0, failure: 'no-drop' });
 
   it.each([
     ['an empty trace', { ...base, samples: [] }],
@@ -268,7 +269,10 @@ describe('analyzeRep on bad data', () => {
         samples: base.samples.map((s, i) => (i === 40 ? { ...s, ay: 30 } : { ...s, ay: 9.81, az: 0 })),
       },
     ],
-    ['a spike at the first sample', { ...base, samples: base.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) }],
+    [
+      'a spike at the first sample with no drop after it',
+      { ...hoverOnly, samples: hoverOnly.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) },
+    ],
   ])('rejects %s without throwing', (_name, trace) => {
     expect(() => rejected(trace)).not.toThrow();
   });

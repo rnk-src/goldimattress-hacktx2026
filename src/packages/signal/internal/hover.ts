@@ -6,8 +6,19 @@ import { routineSpec } from './routine';
 /** A hover must read about 1 g, so a window of zeros or free fall is not a hover, m/s². */
 const HOVER_G_TOL = 2;
 
-// shortcut: fixed jitter limit from synthetic noise (0.05 m/s²), tune on real G2 fixtures.
-const MAX_JITTER = 0.15;
+/**
+ * Largest sd of |a| over the hover window, m/s². Real hovers of a breathing person measured 0.11 to 0.24
+ * (1.9x margin); the synthetic wobble that must fail measures 0.7.
+ * shortcut: tuned on one 5-rep desk-chair set, re-tune with more surfaces.
+ */
+const MAX_JITTER = 0.45;
+
+/**
+ * Share of the minimum hover time the window must cover. Real timestamps are ms-rounded and uneven, so a
+ * 0.3 s window measured 0.2996 s (0.1% short); 10% slack is still under 3 samples at 60 Hz.
+ * shortcut: tuned on one 5-rep desk-chair set, re-tune with more surfaces.
+ */
+const MIN_COVERAGE = 0.9;
 
 /** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
 const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
@@ -38,7 +49,7 @@ export function assessHover(
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
     Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
-    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - 1e-6;
+    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS * MIN_COVERAGE;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   if (ref) {
