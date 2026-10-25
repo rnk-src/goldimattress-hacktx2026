@@ -27,8 +27,9 @@ function encodeSamples(samples: readonly Sample[]): string {
   return btoa(binary);
 }
 
-function decodeSamples(encoded: string): Sample[] {
+export function decodeSamples(encoded: string): Sample[] {
   const binary = atob(encoded);
+  if (binary.length % 16 !== 0) throw new Error('Sample bytes are not whole samples');
   const view = new DataView(new ArrayBuffer(binary.length));
   for (let i = 0; i < binary.length; i++) view.setUint8(i, binary.charCodeAt(i));
   return Array.from({ length: binary.length / 16 }, (_, i) => ({

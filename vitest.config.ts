@@ -1,20 +1,19 @@
 import { defineConfig } from 'vitest/config';
+import groups from './package-groups.cjs';
 
-// Packages whose tests need a DOM. Keep in step with the pure-package list in eslint.config.js.
-const domPackages = ['sensors', 'store', 'coach', 'app'];
+const { domPackages } = groups;
+const boundaries = 'src/boundaries.test.ts';
 
 export default defineConfig({
   test: {
     passWithNoTests: true,
-    // Boundary tests spawn depcruise and load the ESLint config; allow for cold CI runners.
-    testTimeout: 30_000,
     projects: [
       {
         test: {
           name: 'node',
           environment: 'node',
           include: ['src/**/*.test.ts'],
-          exclude: domPackages.map((p) => `src/packages/${p}/**`),
+          exclude: [boundaries, ...domPackages.map((p) => `src/packages/${p}/**`)],
         },
       },
       {
@@ -22,6 +21,15 @@ export default defineConfig({
           name: 'dom',
           environment: 'happy-dom',
           include: domPackages.map((p) => `src/packages/${p}/**/*.test.ts`),
+        },
+      },
+      {
+        test: {
+          name: 'boundaries',
+          environment: 'node',
+          include: [boundaries],
+          // Spawns depcruise and loads the ESLint config; allow for cold CI runners.
+          testTimeout: 30_000,
         },
       },
     ],
