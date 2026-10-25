@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Person, RepResult, Surface, TestRecord, Trace, Verdict } from '../domain';
 import { memoryStorage, synthRep } from '../testkit';
 import { StoreFullError, createLocalStore } from './index';
@@ -194,6 +194,18 @@ describe('trace encoding', () => {
     const written = storage.writes.at(-1)!;
     expect(written).not.toContain('"ax"');
     expect(written.length).toBeLessThan(trace.samples.length * 16 * 2);
+  });
+
+  it('does not decode stored traces when saving another record', async () => {
+    const storage = memoryStorage();
+    const trace = synthRep({ seed: 6 });
+    const store = createLocalStore(storage);
+    await store.saveTest({ ...record('t1', 'p1', 's1'), reps: [accepted(trace)] });
+    const decode = vi.spyOn(globalThis, 'atob');
+
+    await store.saveSurface(surface('s2', 'New couch'));
+
+    expect(decode).not.toHaveBeenCalled();
   });
 });
 
