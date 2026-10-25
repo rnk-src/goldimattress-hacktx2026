@@ -1,7 +1,7 @@
 import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
 import { FLIGHT_ACCEL } from './constants';
 import { DROP_MODELS } from './drop-model';
-import type { DropModel, Segments } from './drop-model';
+import type { FoundDrop } from './drop-model';
 import { repFeatures } from './features';
 import { DROP_JITTER, assessHover } from './hover';
 import { estimateRate, magnitude } from './math';
@@ -54,12 +54,12 @@ function leftSurface(trace: Trace, mags: readonly number[], impact: number): boo
 }
 
 /** Impact speed, features, lean and flight time, or null when the speed or a feature is not a finite number. */
-function measure(model: DropModel, trace: Trace, mags: readonly number[], seg: Segments, leanDeg: number) {
-  const impactSpeed = model.impactSpeed(trace, mags, seg);
+function measure(trace: Trace, found: FoundDrop, leanDeg: number) {
+  const impactSpeed = found.impactSpeed();
   if (!(impactSpeed >= MIN_IMPACT_SPEED && Number.isFinite(impactSpeed))) return null;
-  const features = repFeatures(trace.samples, seg.impact, impactSpeed);
+  const features = repFeatures(trace.samples, found.seg.impact, impactSpeed);
   if (features === null) return null;
-  return { features, impactSpeed, leanDeg, ...(seg.flightS === undefined ? {} : { flightS: seg.flightS }) };
+  return { features, impactSpeed, leanDeg, ...(found.flightS === undefined ? {} : { flightS: found.flightS }) };
 }
 
 /** Full per-rep pipeline: the shared shell around the routine's drop model. Never throws on bad data. */
@@ -69,8 +69,9 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   }
   const model = DROP_MODELS[dropModelOf(trace.routine)];
   const mags = trace.samples.map(magnitude);
-  const seg = model.findDrop(trace, mags);
-  if (typeof seg === 'string') return reject(trace, [seg]);
+  const found = model.findDrop(trace, mags);
+  if (typeof found === 'string') return reject(trace, [found]);
+  const { seg } = found;
   if (hasGap(trace.samples, seg.hoverFrom, trace.samples[seg.impact]!.t + GAP_WINDOW_AFTER_IMPACT_S)) {
     return reject(trace, ['low-sample-rate']);
   }
@@ -81,11 +82,8 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
   if (early.length > 0) return reject(trace, early);
 
-  const measured = measure(model, trace, mags, seg, assessment.leanDeg);
+  const measured = measure(trace, found, assessment.leanDeg);
   if (measured === null) return reject(trace, ['no-drop-found']);
-  const { weight, issues } = model.quality(
-    { trace, seg, jitter: assessment.jitter, stopTime: measured.features.stopTime },
-    ref,
-  );
+  const { weight, issues } = found.quality({ jitter: assessment.jitter, features: measured.features }, ref);
   return { ok: true, ...measured, hoverJitter: assessment.jitter, weight, issues, trace };
 }

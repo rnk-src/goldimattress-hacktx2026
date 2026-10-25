@@ -6,29 +6,35 @@ const PRIOR_JITTER_SCALE = 0.225;
 const CAUGHT_STOP_S = 0.6;
 const CAUGHT_FALL_S = 0.3;
 
-export interface Measures {
-  jitter: number;
-  stopTime: number;
+/** A quality weight in 0..1 and the issues behind it. */
+export interface Score {
+  weight: number;
+  issues: RejectReason[];
 }
 
 /** 1 up to `free`, then straight down to 0 over `fall`. */
 export const ramp = (excess: number, fall: number) => Math.min(1, Math.max(0, 1 - excess / fall));
 
+/** One factor as a score: it names `issue` when the factor is below 1. */
+export const factor = (f: number, issue: RejectReason): Score => ({ weight: f, issues: f < 1 ? [issue] : [] });
+
+/** The product of the weights and the issues of every part, in order. */
+export const combine = (...parts: Score[]): Score => ({
+  weight: parts.reduce((w, p) => w * p.weight, 1),
+  issues: parts.flatMap((p) => p.issues),
+});
+
 /**
- * Quality weight in 0..1 and the issues behind it, from how still the hover was and whether the legs caught
- * the landing. Lean and impact speed are not scored here: they differ by surface, so only a person's own
- * reps are compared on them (see `buildReference`).
+ * How still the hover was. Lean and impact speed are not scored: they differ by surface, so only a person's
+ * own reps are compared on them (see `buildReference`).
  * shortcut: the ramps are guesses from three sets of one person, tune with the simulator and sloppy sets.
  */
-export function scoreRep(m: Measures, ref?: ReferenceStats): { weight: number; issues: RejectReason[] } {
-  const issues: RejectReason[] = [];
-  const factor = (f: number, issue: RejectReason) => {
-    if (f < 1) issues.push(issue);
-    return f;
-  };
+export function jitterScore(jitter: number, ref?: ReferenceStats): Score {
   // A calm person is judged no stricter than the prior, so a still reference cannot make a normal hover unusable.
   const jitterScale = Math.max(ref?.jitterScale ?? 0, PRIOR_JITTER_SCALE);
-  const still = factor(ramp(m.jitter - 2 * jitterScale, 2 * jitterScale), 'not-still');
-  const landing = factor(ramp(m.stopTime - CAUGHT_STOP_S, CAUGHT_FALL_S), 'caught-landing');
-  return { weight: still * landing, issues };
+  return factor(ramp(jitter - 2 * jitterScale, 2 * jitterScale), 'not-still');
 }
+
+/** Whether the legs caught the landing, from the first lobe's length. The body model only. */
+export const caughtLandingScore = (stopTime: number): Score =>
+  factor(ramp(stopTime - CAUGHT_STOP_S, CAUGHT_FALL_S), 'caught-landing');
