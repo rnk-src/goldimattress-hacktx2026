@@ -1,41 +1,25 @@
 import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
-import type { Access, SensorSource } from '../../sensors';
+import type { Access } from '../../sensors';
 import { routineSpec } from '../../signal';
-import type { Store } from '../../store';
+import { calibrateView } from './calibrate';
+import { mountProfileScreen } from './profile';
+import { brandHeader } from './shell';
+import type { AppDeps } from './shell';
+
+export type { AppDeps };
 
 // Raw capture records sit-drops, so it reads the sit-drop timings.
 const CAPTURE_SPEC = routineSpec('sit-drop');
 const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS;
 const REST_S = CAPTURE_SPEC.restS;
 
-export interface AppDeps {
-  source: SensorSource;
-  store: Store;
-  makeCoach: () => Coach;
-  now: () => Date;
-  device: string;
-  newId: () => string;
-}
-
-const brandHeader = `
-  <header class="product-bar">
-    <a class="brand" href="#/permission" aria-label="GoldiMattress home">
-      <svg class="brand__mark" viewBox="0 0 36 24" aria-hidden="true">
-        <path d="M2 8c4-5 8 5 12 0s8 5 12 0 6 0 8 2" />
-        <path d="M2 15c4-5 8 5 12 0s8 5 12 0 6 0 8 2" />
-      </svg>
-      <span>GoldiMattress</span>
-    </a>
-    <span class="product-bar__mode">Raw capture</span>
-  </header>
-`;
 
 function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): void {
   root.innerHTML = `
     <div class="app-shell">
-      ${brandHeader}
+      ${brandHeader('Raw capture')}
       <main class="app-main permission-view">
         <section class="permission-copy" aria-labelledby="permission-title">
           <h1 id="permission-title">Enable motion</h1>
@@ -49,6 +33,11 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
           <p data-permission-status class="permission-status" role="status" aria-live="polite"></p>
           <p class="privacy-note">Raw acceleration stays on this device unless you export the JSON file.</p>
         </section>
+        <nav class="home-links" aria-label="Screens">
+          <a href="#/calibrate">Calibrate a surface</a>
+          <a href="#/profile">Profiles</a>
+          <a href="#/capture">Raw capture</a>
+        </nav>
         <aside class="safety-note" aria-labelledby="safety-title">
           <h2 id="safety-title">Before you drop</h2>
           <ul>
@@ -101,7 +90,7 @@ function captureView(
 ): () => void {
   root.innerHTML = `
     <div class="app-shell">
-      ${brandHeader}
+      ${brandHeader('Raw capture')}
       <main class="app-main capture-view">
         <header class="capture-heading">
           <div>
@@ -284,6 +273,15 @@ function captureView(
   };
 }
 
+const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/profile'];
+
+function profileView(root: HTMLElement, deps: AppDeps): () => void {
+  root.innerHTML = `<div class="app-shell">${brandHeader('Profiles')}<main class="app-main profile-view"><h1>Profiles</h1></main></div>`;
+  const main = root.querySelector<HTMLElement>('main')!;
+  const mounted = mountProfileScreen(main, deps);
+  return () => void mounted.then((unmount) => unmount());
+}
+
 export function startApp(root: HTMLElement, deps: AppDeps): () => void {
   root.classList.add('app-root');
   let coach: Coach | undefined;
@@ -304,13 +302,15 @@ export function startApp(root: HTMLElement, deps: AppDeps): () => void {
   };
 
   const render = () => {
-    const route = window.location.hash === '#/capture' ? '#/capture' : '#/permission';
+    const route = ROUTES.find((r) => r === window.location.hash) ?? '#/permission';
     if (route === renderedRoute) return;
     leaveRoute?.();
     leaveRoute = undefined;
     clearTimers();
     renderedRoute = route;
     if (route === '#/capture') leaveRoute = captureView(root, deps, getCoach, later);
+    else if (route === '#/calibrate') leaveRoute = calibrateView(root, deps, getCoach);
+    else if (route === '#/profile') leaveRoute = profileView(root, deps);
     else permissionView(root, deps, getCoach);
   };
 
