@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Coach } from '../coach';
-import type { Person, ReferenceStats, Sample, Trace } from '../domain';
+import type { SensorSource } from '../sensors';
+import { caveatTexts, hardnessText, springinessText } from './internal/wording';
+import type { Person, ReferenceStats, Sample, Trace, Verdict } from '../domain';
 import { createReplaySource } from '../sensors';
 import { analyzeRep, buildReference } from '../signal';
 import { createLocalStore } from '../store';
@@ -54,14 +56,14 @@ const flush = async () => {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 };
 
-function mount(samples: Sample[], store: Store) {
+function mount(samples: Sample[], store: Store, source?: SensorSource) {
   const coach: Coach = { play() {}, keepAwake: () => Promise.resolve(), setMuted() {}, dispose() {} };
   const root = document.createElement('main');
   document.body.append(root);
   window.location.hash = '#/test';
 
   const stop = startApp(root, {
-    source: createReplaySource(traceOf(samples)),
+    source: source ?? createReplaySource(traceOf(samples)),
     store,
     makeCoach: () => coach,
     now: () => new Date('2026-10-24T17:00:00.000Z'),
@@ -133,17 +135,34 @@ describe('test screen', () => {
     expect(text(root, '[data-hardness]')).toContain("can't tell yet");
   });
 
-  it('labels the confidence and never claims confidence from fewer than three usable reps', async () => {
-    const { root } = mount(stream([]), await storeWith(withReference()));
-    await runTest(root);
-    expect(text(root, '[data-confidence]')).toMatch(/confident|close call|not enough data/);
+  it('labels the confidence on the result', async () => {
+    const store = await storeWith(withReference());
+    const { root } = mount(stream([]), store);
 
-    const samples = stream([]);
+    await runTest(root);
+
+    expect(text(root, '[data-confidence]')).toMatch(/confident|close call|not enough data/);
+    const [record] = await store.listTests();
+    expect(record?.verdict.confidence).toBeDefined();
+  });
+
+  it('shows no confidence at all after fewer than three usable reps', async () => {
+    const store = await storeWith(withReference());
+    const reps: SynthOptions[] = [
+      { seed: 70 },
+      { seed: 71 },
+      ...Array.from({ length: 8 }, (_, i) => ({ failure: 'left-surface' as const, seed: 80 + i })),
+    ];
+    const samples = synthStream(reps, REST_S);
     const last = samples.at(-1)!;
     for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
-    const low = mount(samples.slice(0, Math.floor(samples.length / 3)), await storeWith(withReference()));
-    await runTest(low.root);
-    expect(text(low.root, '[data-confidence]')).not.toContain('confident');
+    const { root } = mount(samples, store);
+
+    await runTest(root);
+
+    expect(text(root, '[data-result]')).toContain('not working');
+    expect(root.querySelector('[data-confidence]')).toBeNull();
+    expect(await store.listTests()).toEqual([]);
   });
 
   it('lists a lean difference as a caveat', async () => {
@@ -176,5 +195,147 @@ describe('test screen', () => {
     await runTest(root);
 
     expect(text(root, '[data-save-status]')).toContain('Could not save');
+  });
+
+  it('does not put a profile name into the page as HTML', async () => {
+    const name = '<img src=x onerror=alert(1)>';
+    const { root } = mount(stream([]), await storeWith({ id: 'person-1', name, references: {} }));
+    await flush();
+
+    expect(root.querySelector('[data-block] img')).toBeNull();
+    expect(text(root, '[data-block]')).toContain(name);
+  });
+
+  it('locks the form during a run and saves under the values it started with', async () => {
+    const store = await storeWith(withReference());
+    let push: (sample: Sample) => void = () => undefined;
+    const source: SensorSource = {
+      requestAccess: () => Promise.resolve('granted'),
+      start: (callback) => (push = callback),
+      stop() {},
+      sampleRateHz: 60,
+    };
+    const { root } = mount([], store, source);
+    await flush();
+    const name = root.querySelector<HTMLInputElement>('input[name="surface"]')!;
+    name.value = 'Blue couch';
+    root.querySelector<HTMLButtonElement>('[data-action="start-test"]')?.click();
+
+    expect(name.disabled).toBe(true);
+    expect(root.querySelector<HTMLSelectElement>('select[name="routine"]')?.disabled).toBe(true);
+    name.value = '';
+    const samples = stream([]);
+    const last = samples.at(-1)!;
+    for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
+    await flush();
+    samples.forEach(push);
+    await flush();
+
+    const [surface] = await store.findSurfaces('');
+    expect(surface?.name).toBe('Blue couch');
+  });
+
+  it('files "Blue  couch" and "blue couch" under one surface', async () => {
+    const store = await storeWith(withReference());
+    const first = mount(stream([]), store);
+    await runTest(first.root, 'Blue  couch');
+    first.stop();
+    const second = mount(stream([]), store);
+    await runTest(second.root, 'blue couch');
+
+    expect(await store.findSurfaces('')).toHaveLength(1);
+  });
+
+  it('lists a skipped rest as a caveat', async () => {
+    const store = await storeWith(withReference());
+    let push: (sample: Sample) => void = () => undefined;
+    const source: SensorSource = {
+      requestAccess: () => Promise.resolve('granted'),
+      start: (callback) => (push = callback),
+      stop() {},
+      sampleRateHz: 60,
+    };
+    const samples = stream([]);
+    const last = samples.at(-1)!;
+    for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
+    const { root } = mount([], store, source);
+    await flush();
+    root.querySelector<HTMLInputElement>('input[name="surface"]')!.value = 'Blue couch';
+    root.querySelector<HTMLButtonElement>('[data-action="start-test"]')?.click();
+    await flush();
+
+    const skip = root.querySelector<HTMLButtonElement>('[data-action="skip-rest"]')!;
+    let skipped = false;
+    for (const sample of samples) {
+      push(sample);
+      if (!skipped && !skip.hidden) {
+        skip.click();
+        skipped = true;
+      }
+    }
+    await flush();
+
+    expect(skipped).toBe(true);
+    expect(text(root, '[data-caveats]').toLowerCase()).toContain('skipped a rest');
+  });
+
+  it('stamps every saved rep with the device and when it started', async () => {
+    const store = await storeWith(withReference());
+    const { root } = mount(stream([]), store);
+
+    await runTest(root);
+
+    const [record] = await store.listTests();
+    expect(record?.reps.every((rep) => rep.trace.device === 'iPhone' && rep.trace.startedAt !== '')).toBe(true);
+  });
+});
+
+const verdict = (over: Partial<Verdict>): Verdict => ({
+  hardness: 0,
+  springiness: 0,
+  hardnessLabel: 'just-right',
+  springinessLabel: 'just-right',
+  firmer: false,
+  bouncier: false,
+  match: 100,
+  perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  hardnessInterval: [0, 0],
+  springinessInterval: [0, 0],
+  confidence: 'confident',
+  hardnessReliable: false,
+  caveats: [],
+  ...over,
+});
+
+describe('result wording', () => {
+  it.each([
+    ['just-right', true, 'same bounce'],
+    ['slightly', true, 'slightly bouncier'],
+    ['slightly', false, 'slightly less bouncy'],
+    ['much', true, 'much bouncier'],
+    ['much', false, 'much less bouncy'],
+  ] as const)('says %s / bouncier=%s as "%s"', (label, bouncier, expected) => {
+    expect(springinessText(verdict({ springinessLabel: label, bouncier }))).toBe(expected);
+  });
+
+  it.each([
+    ['just-right', true, 'same hardness'],
+    ['slightly', true, 'slightly firmer'],
+    ['slightly', false, 'slightly softer'],
+    ['much', true, 'much firmer'],
+    ['much', false, 'much softer'],
+  ] as const)('says hardness %s / firmer=%s as "%s" once it is reliable', (label, firmer, expected) => {
+    expect(hardnessText(verdict({ hardnessLabel: label, firmer, hardnessReliable: true }))).toBe(expected);
+  });
+
+  it("says hardness can't be told yet while it is unreliable", () => {
+    expect(hardnessText(verdict({ hardnessLabel: 'much', firmer: true }))).toBe("hardness: can't tell yet");
+  });
+
+  it('names each caveat', () => {
+    expect(caveatTexts(verdict({ caveats: ['lean-differs', 'rest-skipped'] }))).toEqual([
+      'Your lean differed from calibration.',
+      'You skipped a rest between reps.',
+    ]);
   });
 });

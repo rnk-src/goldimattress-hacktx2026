@@ -1,10 +1,10 @@
 import type { Coach } from '../../coach';
-import type { Person, RepResult, Routine, Surface, SurfaceType, TestRecord, Trace } from '../../domain';
-import { createRepSession, rejectMessage } from '../../session';
-import type { RepSession, SessionEvent } from '../../session';
+import type { Person, ReferenceStats, Routine, Surface, SurfaceType, TestRecord } from '../../domain';
+import { rejectMessage } from '../../session';
 import { compare, isUsable } from '../../signal';
 import { shortDeviceModel } from './metadata';
 import { PLACEMENT } from './placement';
+import { createRepRun } from './rep-run';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 import { caveatTexts, confidenceText, hardnessText, matchText, springinessText } from './wording';
@@ -13,13 +13,26 @@ const SURFACE_TYPES: SurfaceType[] = ['mattress', 'couch', 'chair', 'cushion', '
 const GOAL_REPS = 5;
 const MIN_REPS = 3;
 
+/** Collapses runs of spaces so "Blue  couch" and "Blue couch" are one surface. */
+const normalizeName = (name: string): string => name.trim().replace(/\s+/g, ' ');
+
 /** The surface already saved under this name (case-insensitive), or a new one. */
 async function surfaceNamed(deps: AppDeps, name: string, type: SurfaceType): Promise<Surface> {
-  const existing = (await deps.store.findSurfaces(name)).find((s) => s.name.toLowerCase() === name.toLowerCase());
+  const key = name.toLowerCase();
+  const existing = (await deps.store.findSurfaces(name)).find((s) => normalizeName(s.name).toLowerCase() === key);
   if (existing) return existing;
   const surface: Surface = { id: deps.newId(), name, type };
   await deps.store.saveSurface(surface);
   return surface;
+}
+
+/** What a run was started with, fixed at the click so editing the form mid-run cannot change the record. */
+interface RunInputs {
+  person: Person;
+  routine: Routine;
+  ref: ReferenceStats;
+  surfaceName: string;
+  surfaceType: SurfaceType;
 }
 
 export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
@@ -41,6 +54,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
         <p data-usable-count>0 of ${GOAL_REPS} usable reps</p>
         <ol data-rep-dots aria-label="Accepted reps">${Array.from({ length: GOAL_REPS }, (_, i) => `<li data-state="pending">${i + 1}</li>`).join('')}</ol>
         <button class="button button--primary" type="button" data-action="start-test" disabled>Start test</button>
+        <button class="button button--quiet" type="button" data-action="skip-rest" hidden>Skip rest</button>
         <button class="button button--quiet" type="button" data-action="finish-test" hidden disabled>Finish with ${MIN_REPS} reps</button>
         <p data-form-error role="alert"></p>
         <section data-result aria-label="Test result" hidden></section>
@@ -60,28 +74,33 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   const usableCount = q('[data-usable-count]');
   const dots = Array.from(root.querySelectorAll<HTMLElement>('[data-rep-dots] li'));
   const startButton = q<HTMLButtonElement>('[data-action="start-test"]');
+  const skipButton = q<HTMLButtonElement>('[data-action="skip-rest"]');
   const finishButton = q<HTMLButtonElement>('[data-action="finish-test"]');
   const formError = q('[data-form-error]');
   const result = q('[data-result]');
+  const lockedFields = [profileSelect, routineSelect, surfaceInput, typeSelect];
 
   let mounted = true;
   let running = false;
-  let session: RepSession | undefined;
   let profiles: Person[] = [];
   let person: Person | undefined;
-  let clockBase: number | undefined;
-  let latestT = 0;
-  let startedAts: string[] = [];
+  let inputs: RunInputs | undefined;
 
   const routine = () => routineSelect.value as Routine;
   const reference = () => person?.references[routine()];
 
+  const link = (href: string, label: string) => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = label;
+    return a;
+  };
   const refresh = () => {
     placement.innerHTML = `<p>${PLACEMENT[routine()].text}</p>`;
     if (!person) {
-      block.innerHTML = 'Create a profile first. <a href="#/profile">Create a profile</a>';
+      block.replaceChildren('Create a profile first. ', link('#/profile', 'Create a profile'));
     } else if (!reference()) {
-      block.innerHTML = `${person.name} has no reference for this routine. <a href="#/calibrate">Calibrate</a> it first.`;
+      block.replaceChildren(`${person.name} has no reference for this routine. `, link('#/calibrate', 'Calibrate'), ' it first.');
     } else {
       block.textContent = '';
     }
@@ -115,26 +134,16 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   routineSelect.addEventListener('change', refresh);
   refresh();
 
-  /** Traces are rebased per rep, so a rep's start is dated from the sample that ended it. */
-  const startedAtOf = (trace: Trace): string => {
-    const first = trace.samples[0];
-    const last = trace.samples.at(-1);
-    const durationS = first && last ? last.t - first.t : 0;
-    return new Date((clockBase ?? deps.now().getTime()) + (latestT - durationS) * 1_000).toISOString();
-  };
-
-  const finishRun = () => {
+  const unlock = () => {
     running = false;
-    routineSelect.disabled = false;
-    profileSelect.disabled = false;
+    lockedFields.forEach((field) => (field.disabled = false));
     finishButton.hidden = true;
     finishButton.disabled = true;
-    deps.source.stop();
-    void getCoach().keepAwake(false);
+    skipButton.hidden = true;
     refresh();
   };
 
-  const showResult = (record: TestRecord) => {
+  const showResult = (record: TestRecord, surfaceName: string, surfaceType: SurfaceType) => {
     const { verdict } = record;
     result.hidden = false;
     result.innerHTML = `
@@ -147,7 +156,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
     void (async () => {
       let message = 'Test saved.';
       try {
-        const surface = await surfaceNamed(deps, surfaceInput.value.trim(), typeSelect.value as SurfaceType);
+        const surface = await surfaceNamed(deps, surfaceName, surfaceType);
         await deps.store.saveTest({ ...record, surfaceId: surface.id });
       } catch (error) {
         message = `Could not save: ${error instanceof Error ? error.message : 'unknown error'}. Test not stored.`;
@@ -157,106 +166,86 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
     })();
   };
 
-  const onDone = (reps: RepResult[], outcome: string) => {
-    finishRun();
-    const stamped = reps.map((rep, i) => ({ ...rep, trace: { ...rep.trace, startedAt: startedAts[i] ?? rep.trace.startedAt } }));
-    if (outcome === 'retry' || !stamped.some(isUsable)) {
-      result.hidden = false;
-      result.innerHTML = '<p data-retry>This technique or surface is not working. Nothing was saved. Try again when you are ready.</p>';
-      return;
-    }
-    showResult({
-      id: deps.newId(),
-      personId: person!.id,
-      surfaceId: '',
-      routine: routine(),
-      createdAt: deps.now().toISOString(),
-      device: shortDeviceModel(deps.device),
-      sampleRateHz: deps.source.sampleRateHz ?? stamped[0]!.trace.sampleRateHz,
-      reps: stamped,
-      verdict: compare(stamped, reference()!.stats),
-    });
-  };
-
-  const show = (events: SessionEvent[]) => {
-    for (const event of events) {
-      if (event.kind === 'cue') {
-        if (event.cue.key === 'rep-accepted' || event.cue.key === 'rep-rejected') feedback.textContent = event.cue.text;
-        else cueText.textContent = event.cue.text;
-        getCoach().play(event.cue);
-      } else if (event.kind === 'state') {
-        finishButton.disabled = (session?.accepted ?? 0) < MIN_REPS || event.state === 'capturing' || event.state === 'done';
-      } else if (event.kind === 'rep') {
-        startedAts.push(startedAtOf(event.result.trace));
-        if (isUsable(event.result)) {
-          const accepted = session?.accepted ?? 0;
-          dots[accepted - 1]?.setAttribute('data-state', 'accepted');
-          usableCount.textContent = `${accepted} of ${GOAL_REPS} usable reps`;
-          finishButton.textContent = `Finish with ${accepted} reps`;
-          finishButton.hidden = accepted < MIN_REPS;
-          finishButton.disabled = accepted < MIN_REPS || session?.state === 'capturing';
-        } else {
-          feedback.textContent = rejectMessage((event.result.ok ? event.result.issues : event.result.reasons)[0]!);
-        }
-      } else if (event.kind === 'done') {
-        onDone(event.reps, event.outcome);
+  const run = createRepRun(deps, getCoach, {
+    onCue(cue) {
+      if (cue.key === 'rep-accepted' || cue.key === 'rep-rejected') feedback.textContent = cue.text;
+      else cueText.textContent = cue.text;
+    },
+    onState(state) {
+      skipButton.hidden = state !== 'resting';
+      finishButton.disabled = run.accepted < MIN_REPS || state === 'capturing' || state === 'done';
+    },
+    onRep(rep, accepted) {
+      if (isUsable(rep)) {
+        dots[accepted - 1]?.setAttribute('data-state', 'accepted');
+        usableCount.textContent = `${accepted} of ${GOAL_REPS} usable reps`;
+        finishButton.textContent = `Finish with ${accepted} reps`;
+        finishButton.hidden = accepted < MIN_REPS;
+        finishButton.disabled = accepted < MIN_REPS || run.state === 'capturing';
+      } else {
+        feedback.textContent = rejectMessage((rep.ok ? rep.issues : rep.reasons)[0]!);
       }
-    }
-  };
+    },
+    onDone(reps, outcome) {
+      unlock();
+      const used = inputs!;
+      if (outcome === 'retry' || !reps.some(isUsable)) {
+        result.hidden = false;
+        result.innerHTML =
+          '<p data-retry>This technique or surface is not working. Nothing was saved. Try again when you are ready.</p>';
+        return;
+      }
+      try {
+        showResult(
+          {
+            id: deps.newId(),
+            personId: used.person.id,
+            surfaceId: '',
+            routine: used.routine,
+            createdAt: deps.now().toISOString(),
+            device: shortDeviceModel(deps.device),
+            sampleRateHz: deps.source.sampleRateHz ?? reps[0]!.trace.sampleRateHz,
+            reps,
+            verdict: compare(reps, used.ref),
+          },
+          used.surfaceName,
+          used.surfaceType,
+        );
+      } catch {
+        result.hidden = false;
+        result.innerHTML = '<p data-retry>The result could not be worked out. Nothing was saved. Try the test again.</p>';
+      }
+    },
+    onBlocked(message) {
+      cueText.textContent = message;
+      unlock();
+    },
+  });
 
-  startButton.addEventListener('click', async () => {
+  startButton.addEventListener('click', () => {
     const ref = reference();
-    const name = surfaceInput.value.trim();
+    const surfaceName = normalizeName(surfaceInput.value);
     if (!ref || !person) return;
-    if (!name) {
+    if (!surfaceName) {
       formError.textContent = 'Enter the name of the surface first.';
       return;
     }
     formError.textContent = '';
-    startButton.disabled = true;
-    const coach = getCoach();
-    let access;
-    try {
-      access = await deps.source.requestAccess();
-    } catch {
-      access = 'denied' as const;
-    }
-    if (!mounted) return;
-    if (access !== 'granted') {
-      cueText.textContent =
-        access === 'denied'
-          ? 'Motion access is blocked. Open Settings, enable Motion & Orientation Access for Safari, then reload this page.'
-          : 'This browser does not support motion sensors. Try Safari or Chrome over HTTPS on your phone.';
-      startButton.disabled = false;
-      return;
-    }
+    inputs = { person, routine: routine(), ref: ref.stats, surfaceName, surfaceType: typeSelect.value as SurfaceType };
     running = true;
-    routineSelect.disabled = true;
-    profileSelect.disabled = true;
+    startButton.disabled = true;
+    lockedFields.forEach((field) => (field.disabled = true));
     result.hidden = true;
     feedback.textContent = '';
     usableCount.textContent = `0 of ${GOAL_REPS} usable reps`;
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
-    session = createRepSession({ routine: routine(), ref: ref.stats });
-    void coach.keepAwake(true);
-    clockBase = undefined;
-    startedAts = [];
-    deps.source.start((sample) => {
-      clockBase ??= deps.now().getTime() - sample.t * 1_000;
-      latestT = sample.t;
-      show(session!.push(sample));
-    });
+    void run.start(inputs.routine, inputs.ref);
   });
-  finishButton.addEventListener('click', () => {
-    if (session) show(session.finishNow());
-  });
+  finishButton.addEventListener('click', () => run.finishNow());
+  skipButton.addEventListener('click', () => run.skipRest());
 
   return () => {
     mounted = false;
-    session?.abort();
-    if (running) {
-      deps.source.stop();
-      void getCoach().keepAwake(false);
-    }
+    run.dispose();
   };
 }
