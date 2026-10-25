@@ -114,7 +114,15 @@ describe('tests', () => {
 
 describe('trace encoding', () => {
   const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
-  const accepted = (trace: Trace): RepResult => ({ ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace });
+  const accepted = (trace: Trace): RepResult => ({
+    ok: true,
+    features,
+    impactSpeed: 0.6,
+    leanDeg: 15,
+    hoverJitter: 0.1,
+    weight: 1,
+    trace,
+  });
   const rejected = (trace: Trace): RepResult => ({ ok: false, reasons: ['not-still'], trace });
 
   /** Storage that remembers everything written, to inspect the stored form. */
@@ -189,7 +197,15 @@ describe('capacity', () => {
     ...record(`t${i}`, 'p1', 's1'),
     reps: [
       ...[0, 1, 2, 3, 4].map(
-        (n): RepResult => ({ ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace: synthRep({ seed: i * 10 + n }) }),
+        (n): RepResult => ({
+          ok: true,
+          features,
+          impactSpeed: 0.6,
+          leanDeg: 15,
+          hoverJitter: 0.1,
+          weight: 1,
+          trace: synthRep({ seed: i * 10 + n }),
+        }),
       ),
       { ok: false, reasons: ['not-still'], trace: synthRep({ seed: i * 10 + 9 }) },
     ],
