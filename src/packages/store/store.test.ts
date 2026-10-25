@@ -354,6 +354,23 @@ describe('schema versioning and bad data', () => {
     expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(corrupt);
   });
 
+  it('refuses to overwrite readable newer data when its backup does not fit', async () => {
+    const memory = memoryStorage();
+    const newer = JSON.stringify({ version: 2, people: [], surfaces: [], tests: [] });
+    memory.setItem(KEY, newer);
+    const storage = {
+      ...memory,
+      setItem: (key: string, value: string) => {
+        if (key === CORRUPT_BACKUP_KEY) throw new DOMException('Storage is full', 'QuotaExceededError');
+        memory.setItem(key, value);
+      },
+    };
+
+    await expect(createLocalStore(storage).savePerson(person('p1'))).rejects.toBeInstanceOf(StoreFullError);
+
+    expect(memory.getItem(KEY)).toBe(newer);
+  });
+
   it('still saves when the corrupt-data backup does not fit', async () => {
     const memory = memoryStorage();
     memory.setItem(KEY, '{not json');
