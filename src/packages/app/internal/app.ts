@@ -2,7 +2,13 @@ import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
 import type { Access, SensorSource } from '../../sensors';
+import { routineSpec } from '../../signal';
 import type { Store } from '../../store';
+
+// Raw capture records sit-drops, so it reads the sit-drop timings.
+const CAPTURE_SPEC = routineSpec('sit-drop');
+const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS;
+const REST_S = CAPTURE_SPEC.restS;
 
 export interface AppDeps {
   source: SensorSource;
@@ -34,8 +40,8 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
         <section class="permission-copy" aria-labelledby="permission-title">
           <h1 id="permission-title">Enable motion</h1>
           <p class="lead">Your phone’s accelerometer records five hands-free sit-drop windows. Access begins only after you tap below.</p>
-          <div class="protocol" aria-label="Five repetitions, each six seconds with a twenty-second rest">
-            <span>5 repetitions</span><span>6 s record</span><span>20 s rest</span>
+          <div class="protocol" aria-label="Five repetitions, each ${WINDOW_S} seconds with a ${REST_S}-second rest">
+            <span>5 repetitions</span><span>${WINDOW_S} s record</span><span>${REST_S} s rest</span>
           </div>
         </section>
         <section class="permission-action" aria-label="Motion permission">
@@ -203,7 +209,7 @@ function captureView(
       });
       activeSamples = [];
       startedAt = deps.now().toISOString();
-      const readyText = `Repetition ${repetition} of 5. Recording for six seconds.`;
+      const readyText = `Repetition ${repetition} of 5. Recording for ${WINDOW_S} seconds.`;
       if (status) status.textContent = readyText;
       coach.play({ key: 'drop-when-ready', text: readyText, beep: 'ready' });
       later(() => {
@@ -221,7 +227,7 @@ function captureView(
             samples,
           });
         }
-        const capturedText = `Repetition ${repetition} captured. Rest for twenty seconds.`;
+        const capturedText = `Repetition ${repetition} captured. Rest for ${REST_S} seconds.`;
         if (status) status.textContent = capturedText;
         coach.play({ key: 'captured', text: capturedText, beep: 'captured' });
         later(() => {
@@ -262,8 +268,8 @@ function captureView(
               status.textContent = 'Capture ended without enough motion events. Keep this page visible and try again.';
             }
           }
-        }, 20_000);
-      }, 6_000);
+        }, REST_S * 1_000);
+      }, WINDOW_S * 1_000);
     };
 
     record();
