@@ -39,6 +39,7 @@ const BUILD_FAILURE = {
 } as const;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
+  // shortcut: rig-drop hidden until R7 adds the rig setup screen, remove then
   root.innerHTML = `
     <div class="app-shell">
       ${brandHeader('Calibrate')}
@@ -46,7 +47,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         <h1>Calibrate on a surface you like</h1>
         <label>Routine
           <select name="routine">
-            ${(Object.keys(PLACEMENT) as Routine[]).map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
+            ${(Object.keys(PLACEMENT) as Routine[]).filter((r) => r !== 'rig-drop').map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
           </select>
         </label>
         <section data-placement aria-label="Phone placement"></section>
