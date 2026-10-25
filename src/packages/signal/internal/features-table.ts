@@ -4,6 +4,7 @@ import type { FeatureName } from '../../domain';
  * One row per feature. `axis` is the property it scores (null: reported but not scored, too noisy), and `sign` is +1 when a higher value means
  * firmer (hardness) or springier (springiness). `absFloor` is the smallest σ in the feature's unit,
  * needed when μ_ref is near 0 (dead foam: bounceRatio ≈ 0).
+ * shortcut: references and tests saved before `peak` existed lack it, so `compare` throws on them; clear local data or add a migration if real users hold old data.
  * shortcut: floors are starting values, not tuned on real G2 fixtures; peak (m/s²) is a guess of 0.1; peakOverV (1/s) is a guess of ~2.5% of a typical 20/s. Tune on G2 recordings.
  */
 export const FEATURES: readonly {
