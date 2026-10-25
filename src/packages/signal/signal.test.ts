@@ -17,7 +17,7 @@ function refWithLean(routine: Routine, median: number): ReferenceStats {
     routine,
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
-    features: { peakOverV: flat, stopTime: flat, bounceRatio: flat, settleTime: flat },
+    features: { peak: flat, peakOverV: flat, stopTime: flat, bounceRatio: flat, settleTime: flat },
     leanDeg: { median, mad: 1 },
     impactSpeed: { median: 0.6, mad: 0.03 },
     jitterScale: 0.1,
@@ -138,6 +138,13 @@ const GRID = [60, 100].flatMap((sampleRateHz) =>
 );
 
 describe('analyzeRep features against the analytic answers', () => {
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('peak within 10% at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Math.abs(result.features.peak / expectedFeatures(opts).peak - 1)).toBeLessThan(0.1);
+  });
+
   it.each(GRID.map(([name, opts]) => ({ name, opts })))('peakOverV within 10% at $name', ({ opts }) => {
     const result = analyzeRep(synthRep(opts));
     expect(result.ok).toBe(true);
