@@ -457,3 +457,60 @@ h2 {
 .field-grid[hidden] {
   display: none;
 }
+
+/* A rule like .button { display: inline-flex } would otherwise beat the browser's own [hidden] rule. */
+[hidden] {
+  display: none !important;
+}
+
+.app-main label {
+  display: grid;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-main select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--control);
+  border-radius: 9px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.repetition-rail li[data-state="accepted"] {
+  color: var(--ink);
+  background: #d4e2e3;
+  border-color: #a9bfc2;
+}
+
+.home-links {
+  display: grid;
+  gap: 8px;
+}
+
+.home-links a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+[data-form-error],
+[data-block] {
+  color: var(--active-dark);
+}
+
+[data-result] p,
+[data-calibration-result] p {
+  margin: 8px 0;
+}
+
+[data-match] {
+  font-size: 28px;
+  font-weight: 700;
+}

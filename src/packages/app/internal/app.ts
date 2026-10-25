@@ -5,6 +5,8 @@ import type { Access } from '../../sensors';
 import { positionCue } from '../../session';
 import { DEFAULT_RIG, assessHover, createPositionTracker, routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
+import { testView } from './test-flow';
+import { shortDeviceModel, withRepMetadata } from './metadata';
 import { mountProfileScreen } from './profile';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
@@ -56,6 +58,7 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
         </section>
         <nav class="home-links" aria-label="Screens">
           <a href="#/calibrate">Calibrate a surface</a>
+          <a href="#/test">Test a surface</a>
           <a href="#/profile">Profiles</a>
           <a href="#/capture">Raw capture</a>
         </nav>
@@ -349,9 +352,9 @@ function captureView(
           const trace: Trace = {
             routine: rigDrop ? 'rig-drop' : 'sit-drop',
             sampleRateHz: (samples.length - 1) / (last.t - first.t),
-            device: deps.device,
+            device: shortDeviceModel(deps.device),
             startedAt,
-            samples,
+            samples: samples.map((sample) => ({ ...sample, t: sample.t - first.t })),
           };
           if (rig) trace.rig = rig;
           traces.push(trace);
@@ -409,7 +412,7 @@ function captureView(
   };
 }
 
-const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/profile'];
+const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/test', '#/profile'];
 
 function profileView(root: HTMLElement, deps: AppDeps): () => void {
   root.innerHTML = `<div class="app-shell">${brandHeader('Profiles')}<main class="app-main profile-view"><h1>Profiles</h1></main></div>`;
@@ -422,6 +425,7 @@ function profileView(root: HTMLElement, deps: AppDeps): () => void {
 }
 
 export function startApp(root: HTMLElement, deps: AppDeps): () => void {
+  const appDeps = { ...deps, store: withRepMetadata(deps.store, deps.device, deps.now) };
   root.classList.add('app-root');
   let coach: Coach | undefined;
   let renderedRoute = '';
@@ -447,10 +451,11 @@ export function startApp(root: HTMLElement, deps: AppDeps): () => void {
     leaveRoute = undefined;
     clearTimers();
     renderedRoute = route;
-    if (route === '#/capture') leaveRoute = captureView(root, deps, getCoach, later);
-    else if (route === '#/calibrate') leaveRoute = calibrateView(root, deps, getCoach);
-    else if (route === '#/profile') leaveRoute = profileView(root, deps);
-    else permissionView(root, deps, getCoach);
+    if (route === '#/capture') leaveRoute = captureView(root, appDeps, getCoach, later);
+    else if (route === '#/calibrate') leaveRoute = calibrateView(root, appDeps, getCoach);
+    else if (route === '#/test') leaveRoute = testView(root, appDeps, getCoach);
+    else if (route === '#/profile') leaveRoute = profileView(root, appDeps);
+    else permissionView(root, appDeps, getCoach);
   };
 
   window.addEventListener('hashchange', render);

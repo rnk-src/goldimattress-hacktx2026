@@ -1,3 +1,3 @@
 export { rejectMessage } from './internal/messages';
-export { createRepSession, positionCue } from './internal/session';
-export type { RepSession, SessionEvent, SessionOptions } from './internal/session';
+export { GOAL_REPS, MIN_REPS, createRepSession, positionCue } from './internal/session';
+export type { RepSession, SessionEvent, SessionOptions, SessionOutcome } from './internal/session';

@@ -5,20 +5,26 @@ import { rejectMessage } from './messages';
 export interface SessionOptions {
   routine: Routine;
   ref?: ReferenceStats;
-  /** Accepted reps that end the session. Default 5. */
+  /** Accepted reps that end the session. Default `GOAL_REPS`. */
   goal?: number;
   /** The rig behind a `rig-drop`. It is stamped onto each trace. */
   rig?: RigSetup;
 }
 
+export type SessionOutcome = 'complete' | 'low-confidence' | 'retry';
+
 export type SessionEvent =
   | { kind: 'state'; state: LiveState }
   | { kind: 'cue'; cue: Cue }
   | { kind: 'rep'; result: RepResult }
-  | { kind: 'done'; reps: RepResult[] };
+  | { kind: 'done'; reps: RepResult[]; outcome: SessionOutcome };
 
 export interface RepSession {
   push(s: Sample): SessionEvent[];
+  /** Finishes early once at least three usable reps have been captured. */
+  finishNow(): SessionEvent[];
+  /** Ends the current rest using the latest sample time. */
+  skipRest(): SessionEvent[];
   abort(): void;
   readonly state: LiveState;
   readonly accepted: number;
@@ -29,6 +35,12 @@ export interface RepSession {
 const EPS = 1e-6;
 /** Same slack as the hover window check in `signal`. */
 const WINDOW_TOL_S = 0.002;
+const MAX_ATTEMPTS = 10;
+/** Usable reps that finish a session. */
+export const GOAL_REPS = 5;
+/** Usable reps from which the user may finish early, and below which a session is a retry. */
+export const MIN_REPS = 3;
+const LOW_CONFIDENCE_TEXT = 'Session complete with low confidence.';
 
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
@@ -65,10 +77,13 @@ export const positionCue = (event: 'off' | 'ok', routine: Routine = 'sit-drop'):
 
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
-  const goal = opts.goal ?? 5;
+  const goal = opts.goal ?? GOAL_REPS;
   const restText = `Rest for ${spec.restS} seconds. Do not drop yet.`;
   let restEndT = 0;
+  let restStartedT = 0;
   let restWarned = false;
+  let pendingRestSkipped: boolean | undefined;
+  let previousCaptureEndT: number | undefined;
   let aborted = false;
   /** Time of the first evaluation in the current unbroken run of still hovers. */
   let stillSince: number | undefined;
@@ -93,11 +108,16 @@ export function createRepSession(opts: SessionOptions): RepSession {
     lastCue = key;
     out.push({ kind: 'cue', cue: cueFor(opts.routine, key, text) });
   };
+  const finish = (out: SessionEvent[], outcome: SessionOutcome, text = CUES.done.text) => {
+    setState('done', out);
+    cue('done', out, text);
+    out.push({ kind: 'done', reps: [...reps], outcome });
+  };
 
   const finishRep = (out: SessionEvent[]) => {
     const t0 = capture[0]!.t;
     const last = capture[capture.length - 1]!;
-    const result = analyzeRep(
+    let result = analyzeRep(
       {
         routine: opts.routine,
         sampleRateHz: (capture.length - 1) / (last.t - t0),
@@ -109,9 +129,15 @@ export function createRepSession(opts: SessionOptions): RepSession {
       },
       opts.ref,
     );
+    if (result.ok && previousCaptureEndT !== undefined && pendingRestSkipped !== undefined) {
+      result = { ...result, restS: t0 - previousCaptureEndT, restSkipped: pendingRestSkipped };
+    }
+    pendingRestSkipped = undefined;
     capture = [];
     buffer = [];
-    restEndT = last.t + spec.restS;
+    restStartedT = last.t;
+    previousCaptureEndT = last.t;
+    restEndT = restStartedT + spec.restS;
     restWarned = false;
     reps.push(result);
     const usable = isUsable(result);
@@ -121,9 +147,12 @@ export function createRepSession(opts: SessionOptions): RepSession {
     if (usable) cue('rep-accepted', out);
     else cue('rep-rejected', out, rejectMessage((result.ok ? result.issues : result.reasons)[0]!), true);
     if (accepted >= goal) {
-      setState('done', out);
-      cue('done', out);
-      out.push({ kind: 'done', reps: [...reps] });
+      finish(out, 'complete');
+      return;
+    }
+    if (reps.length >= MAX_ATTEMPTS) {
+      if (accepted >= MIN_REPS) finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
+      else finish(out, 'retry', 'This technique or surface is not working. Try again when you are ready.');
       return;
     }
     setState('resting', out);
@@ -148,6 +177,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       buffer = buffer.filter((w) => s.t - w.t <= spec.preRollS + EPS);
       if (state === 'resting') {
         if (s.t >= restEndT - EPS) {
+          pendingRestSkipped = false;
           setState('positioning', out);
           cue('next-rep', out);
         } else if (!restWarned && Math.hypot(s.ax, s.ay, s.az) - GRAVITY > IMPACT_EXCESS) {
@@ -188,6 +218,20 @@ export function createRepSession(opts: SessionOptions): RepSession {
       if (s.t - stillSince < spec.hoverMinS - EPS) return out;
       setState('armed', out);
       cue('drop-when-ready', out);
+      return out;
+    },
+    finishNow() {
+      const out: SessionEvent[] = [];
+      if (aborted || state === 'done' || state === 'capturing' || accepted < MIN_REPS) return out;
+      finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
+      return out;
+    },
+    skipRest() {
+      const out: SessionEvent[] = [];
+      if (aborted || state !== 'resting') return out;
+      pendingRestSkipped = true;
+      setState('positioning', out);
+      cue('next-rep', out);
       return out;
     },
     abort() {

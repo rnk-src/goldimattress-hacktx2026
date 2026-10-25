@@ -1,5 +1,5 @@
 import type { Person, Surface, TestRecord } from '../../domain';
-import { decodeSamples, encodePerson, encodeTest } from './codec';
+import { encodePerson, encodeTest } from './codec';
 import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
@@ -20,12 +20,11 @@ const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'obj
 /** A stored trace holds one base64 string that decodes to whole samples. */
 function isStoredTrace(x: unknown): boolean {
   if (!isObject(x) || typeof x.samples !== 'string') return false;
-  try {
-    decodeSamples(x.samples);
-    return true;
-  } catch {
-    return false;
-  }
+  const encoded = x.samples;
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return false;
+  const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+  const bytes = (encoded.length / 4) * 3 - padding;
+  return bytes % 16 === 0;
 }
 
 const areReps = (x: unknown): boolean =>
@@ -70,18 +69,22 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
 /**
  * Turns whatever is in storage into the current schema. Missing, corrupt or unrecognised data
  * reads as empty, and the next save replaces it.
- * shortcut: corrupt data and a version newer than this build both read as empty and are overwritten
- * by the next save, with no backup. Keep the raw value under a second key if that ever bites.
+ * Corrupt data and a version newer than this build both read as empty with `corrupt` set. Before the next
+ * save replaces either one, the local store keeps the raw value under its corrupt-backup key.
+ * shortcut: a v1 blob (old `median` stats) reads as empty with its people; dev data only, add a migration if real users ever hold v1.
  */
-export function readStored(raw: string | null): StoredData {
-  if (raw === null) return emptyStored();
+export function readStoredState(raw: string | null): { data: StoredData; corrupt: boolean } {
+  if (raw === null) return { data: emptyStored(), corrupt: false };
+  const unreadable = { data: emptyStored(), corrupt: true };
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!isObject(parsed) || !isLists(parsed)) return emptyStored();
-    // shortcut: a v1 blob (old `median` stats) reads as empty with its people; dev data only, add a migration if real users ever hold v1.
+    if (!isObject(parsed) || !isLists(parsed)) return unreadable;
+    // Old data of the wrong shape (a person without references) is as unreadable as bad JSON: migrateV0 throws on it.
     const data = parsed.version === undefined ? migrateV0(parsed as Parameters<typeof migrateV0>[0]) : parsed;
-    return data.version === 2 && isValidStored(data) ? (data as unknown as StoredData) : emptyStored();
+    return data.version === 2 && isValidStored(data) ? { data: data as unknown as StoredData, corrupt: false } : unreadable;
   } catch {
-    return emptyStored();
+    return unreadable;
   }
 }
+
+export const readStored = (raw: string | null): StoredData => readStoredState(raw).data;
