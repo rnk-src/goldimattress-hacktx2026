@@ -54,7 +54,7 @@ export function compare(
     const sigmaEff = Math.max(mad, floorFactor * Math.max(REL_FLOOR * Math.abs(mu), absFloor));
     const value = (median - mu) / sigmaEff;
     z[name] = value;
-    axes[axis].push(sign * value);
+    if (axis !== null) axes[axis].push(sign * value);
   }
   const hardness = average(axes.hardness);
   const springiness = average(axes.springiness);
