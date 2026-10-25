@@ -1,41 +1,33 @@
 import type { Coach } from '../../coach';
 import type { Recording, Sample, Trace } from '../../domain';
 import { serializeRecording } from '../../sensors';
-import type { Access, SensorSource } from '../../sensors';
-import type { Store } from '../../store';
+import type { Access } from '../../sensors';
+import { routineSpec } from '../../signal';
+import { calibrateView } from './calibrate';
+import { mountProfileScreen } from './profile';
+import { brandHeader } from './shell';
+import type { AppDeps } from './shell';
 
-export interface AppDeps {
-  source: SensorSource;
-  store: Store;
-  makeCoach: () => Coach;
-  now: () => Date;
-  device: string;
-  newId: () => string;
-}
+export type { AppDeps };
 
-const brandHeader = `
-  <header class="product-bar">
-    <a class="brand" href="#/permission" aria-label="GoldiMattress home">
-      <svg class="brand__mark" viewBox="0 0 36 24" aria-hidden="true">
-        <path d="M2 8c4-5 8 5 12 0s8 5 12 0 6 0 8 2" />
-        <path d="M2 15c4-5 8 5 12 0s8 5 12 0 6 0 8 2" />
-      </svg>
-      <span>GoldiMattress</span>
-    </a>
-    <span class="product-bar__mode">Raw capture</span>
-  </header>
-`;
+// Raw capture records sit-drops, so it reads the sit-drop timings.
+const CAPTURE_SPEC = routineSpec('sit-drop');
+/** Extra seconds so a drop that comes a little late still lands inside the window. */
+const LATE_DROP_MARGIN_S = 1;
+const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS + LATE_DROP_MARGIN_S;
+const REST_S = CAPTURE_SPEC.restS;
+
 
 function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): void {
   root.innerHTML = `
     <div class="app-shell">
-      ${brandHeader}
+      ${brandHeader('Raw capture')}
       <main class="app-main permission-view">
         <section class="permission-copy" aria-labelledby="permission-title">
           <h1 id="permission-title">Enable motion</h1>
           <p class="lead">Your phone’s accelerometer records five hands-free sit-drop windows. Access begins only after you tap below.</p>
-          <div class="protocol" aria-label="Five repetitions, each six seconds with a twenty-second rest">
-            <span>5 repetitions</span><span>6 s record</span><span>20 s rest</span>
+          <div class="protocol" aria-label="Five repetitions, each ${WINDOW_S} seconds with a ${REST_S}-second rest">
+            <span>5 repetitions</span><span>${WINDOW_S} s record</span><span>${REST_S} s rest</span>
           </div>
         </section>
         <section class="permission-action" aria-label="Motion permission">
@@ -43,6 +35,11 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
           <p data-permission-status class="permission-status" role="status" aria-live="polite"></p>
           <p class="privacy-note">Raw acceleration stays on this device unless you export the JSON file.</p>
         </section>
+        <nav class="home-links" aria-label="Screens">
+          <a href="#/calibrate">Calibrate a surface</a>
+          <a href="#/profile">Profiles</a>
+          <a href="#/capture">Raw capture</a>
+        </nav>
         <aside class="safety-note" aria-labelledby="safety-title">
           <h2 id="safety-title">Before you drop</h2>
           <ul>
@@ -95,7 +92,7 @@ function captureView(
 ): () => void {
   root.innerHTML = `
     <div class="app-shell">
-      ${brandHeader}
+      ${brandHeader('Raw capture')}
       <main class="app-main capture-view">
         <header class="capture-heading">
           <div>
@@ -203,7 +200,7 @@ function captureView(
       });
       activeSamples = [];
       startedAt = deps.now().toISOString();
-      const readyText = `Repetition ${repetition} of 5. Recording for six seconds.`;
+      const readyText = `Repetition ${repetition} of 5. Recording for ${WINDOW_S} seconds.`;
       if (status) status.textContent = readyText;
       coach.play({ key: 'drop-when-ready', text: readyText, beep: 'ready' });
       later(() => {
@@ -221,7 +218,7 @@ function captureView(
             samples,
           });
         }
-        const capturedText = `Repetition ${repetition} captured. Rest for twenty seconds.`;
+        const capturedText = `Repetition ${repetition} captured. Rest for ${REST_S} seconds.`;
         if (status) status.textContent = capturedText;
         coach.play({ key: 'captured', text: capturedText, beep: 'captured' });
         later(() => {
@@ -262,8 +259,8 @@ function captureView(
               status.textContent = 'Capture ended without enough motion events. Keep this page visible and try again.';
             }
           }
-        }, 20_000);
-      }, 6_000);
+        }, REST_S * 1_000);
+      }, WINDOW_S * 1_000);
     };
 
     record();
@@ -276,6 +273,18 @@ function captureView(
     deps.source.stop();
     void getCoach().keepAwake(false);
   };
+}
+
+const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/profile'];
+
+function profileView(root: HTMLElement, deps: AppDeps): () => void {
+  root.innerHTML = `<div class="app-shell">${brandHeader('Profiles')}<main class="app-main profile-view"><h1>Profiles</h1></main></div>`;
+  const main = root.querySelector<HTMLElement>('main')!;
+  const mounted = mountProfileScreen(main, deps).catch(() => {
+    main.insertAdjacentHTML('beforeend', '<p role="alert">Could not load the saved profiles.</p>');
+    return undefined;
+  });
+  return () => void mounted.then((unmount) => unmount?.());
 }
 
 export function startApp(root: HTMLElement, deps: AppDeps): () => void {
@@ -298,13 +307,15 @@ export function startApp(root: HTMLElement, deps: AppDeps): () => void {
   };
 
   const render = () => {
-    const route = window.location.hash === '#/capture' ? '#/capture' : '#/permission';
+    const route = ROUTES.find((r) => r === window.location.hash) ?? '#/permission';
     if (route === renderedRoute) return;
     leaveRoute?.();
     leaveRoute = undefined;
     clearTimers();
     renderedRoute = route;
     if (route === '#/capture') leaveRoute = captureView(root, deps, getCoach, later);
+    else if (route === '#/calibrate') leaveRoute = calibrateView(root, deps, getCoach);
+    else if (route === '#/profile') leaveRoute = profileView(root, deps);
     else permissionView(root, deps, getCoach);
   };
 

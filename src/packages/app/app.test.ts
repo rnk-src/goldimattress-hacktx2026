@@ -2,9 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Coach } from '../coach';
 import type { Cue, Sample, Trace } from '../domain';
 import { createReplaySource, parseRecording } from '../sensors';
+import { routineSpec } from '../signal';
 import type { SensorSource } from '../sensors';
 import type { Store } from '../store';
 import { startApp } from './index';
+
+const spec = routineSpec('sit-drop');
+const WINDOW_MS = (spec.preRollS + spec.captureS + 1) * 1_000;
+const REST_MS = spec.restS * 1_000;
 
 function coach(): Coach {
   return {
@@ -142,7 +147,7 @@ describe('startApp', () => {
     expect(root.textContent).toContain('Safari or Chrome over HTTPS');
   });
 
-  it('runs five six-second captures with twenty-second rests from one tap', async () => {
+  it('runs five routine-length captures with routine rests from one tap', async () => {
     vi.useFakeTimers();
     const cues: Cue[] = [];
     const fakeCoach: Coach = {
@@ -173,9 +178,9 @@ describe('startApp', () => {
     expect(cues.map((cue) => cue.beep)).toEqual(['ready']);
 
     for (let repetition = 0; repetition < 5; repetition += 1) {
-      await vi.advanceTimersByTimeAsync(6_000);
+      await vi.advanceTimersByTimeAsync(WINDOW_MS);
       expect(cues.at(-1)?.beep).toBe('captured');
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(REST_MS);
       if (repetition < 4) expect(cues.at(-1)?.beep).toBe('ready');
     }
 
@@ -220,7 +225,7 @@ describe('startApp', () => {
     if (label) label.value = 'showroom set 1';
     if (surface) surface.value = 'Blue couch';
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
-    await vi.advanceTimersByTimeAsync(130_000);
+    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
 
     const download = root.querySelector<HTMLAnchorElement>('[data-action="export-recording"]');
     expect(download?.getAttribute('href')).toBe('blob:test');
@@ -230,6 +235,9 @@ describe('startApp', () => {
     expect(recording.surface).toBe('Blue couch');
     expect(recording.traces).toHaveLength(5);
     expect(recording.traces.every((trace) => trace.samples.length > 0)).toBe(true);
+    // The window keeps a margin beyond preRollS + captureS so a late drop is still recorded.
+    const span = recording.traces[0]!.samples.at(-1)!.t - recording.traces[0]!.samples[0]!.t;
+    expect(span).toBeGreaterThan(spec.preRollS + spec.captureS);
   });
 
   it('shows the measured sample rate and event interval', async () => {
@@ -272,7 +280,7 @@ describe('startApp', () => {
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
     expect(progress?.querySelector('[data-state="active"]')?.textContent).toContain('1');
 
-    await vi.advanceTimersByTimeAsync(26_000);
+    await vi.advanceTimersByTimeAsync(WINDOW_MS + REST_MS + 1_000);
     expect(progress?.querySelector('[data-state="complete"]')?.textContent).toContain('1');
     expect(progress?.querySelector('[data-state="active"]')?.textContent).toContain('2');
   });
@@ -374,7 +382,7 @@ describe('startApp', () => {
     expect(start?.disabled).toBe(false);
     expect(stops).toBe(1);
     expect(awake).toEqual([true, false]);
-    await vi.advanceTimersByTimeAsync(130_000);
+    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
     expect(root.textContent).not.toContain('Capture complete');
   });
 
@@ -416,11 +424,11 @@ describe('startApp', () => {
           onSample?.({ t, ax: 0, ay: 9.81, az: 0 });
           await vi.advanceTimersByTimeAsync(1_000);
         }
-        await vi.advanceTimersByTimeAsync(2_000);
+        await vi.advanceTimersByTimeAsync(WINDOW_MS - 4_000);
       } else {
-        await vi.advanceTimersByTimeAsync(6_000);
+        await vi.advanceTimersByTimeAsync(WINDOW_MS);
       }
-      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.advanceTimersByTimeAsync(REST_MS);
     }
 
     expect(root.textContent).toContain('Captured 3 of 5');
@@ -498,7 +506,7 @@ describe('startApp', () => {
     expect(stops).toBe(1);
     expect(awake).toEqual([true, false]);
     expect(root.textContent).toContain('Enable motion');
-    await vi.advanceTimersByTimeAsync(130_000);
+    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
     expect(stops).toBe(1);
     expect(root.textContent).not.toContain('Capture complete');
   });
