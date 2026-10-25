@@ -49,6 +49,7 @@ const TEXT_OVERRIDES: Partial<Record<Routine, Partial<Record<CueKey, string>>>> 
   'rig-drop': {
     'place-phone': 'Strap the phone face up on the slab and rest the slab on the spacer.',
     'phone-off': 'Hold the slab level.',
+    'phone-ok': 'Slab level. Hold still.',
     'drop-when-ready': 'Let go with both hands.',
   },
 };
