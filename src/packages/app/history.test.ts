@@ -156,6 +156,78 @@ describe('saved tests screen', () => {
     expect(text(root, '[data-history-status]')).toContain('usable');
   });
 
+  it('says the verdict now compares with the current reference', async () => {
+    const { store } = await seed();
+    const root = mount(store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="rerun"]')!.click();
+    await flush();
+
+    expect(text(root, '[data-history-status]')).toContain('current reference');
+  });
+
+  it('warns when the reference was recorded with a different rig than the test', async () => {
+    const { store } = await seed();
+    const [person] = await store.listPeople();
+    const reference = person!.references['rig-drop']!;
+    const otherRig = { ...DEFAULT_RIG, baseCm: [17.5, 9] as [number, number], massKg: 3.4 };
+    await store.savePerson({
+      ...person!,
+      references: { 'rig-drop': { ...reference, reps: reference.reps.map((rep) => ({ ...rep, trace: { ...rep.trace, rig: otherRig } })) } },
+    });
+    const root = mount(store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="rerun"]')!.click();
+    await flush();
+
+    expect(text(root, '[data-history-status]').toLowerCase()).toContain('different rig');
+  });
+
+  it('still lists the good tests when one stored test cannot be read', async () => {
+    const { store } = await seed();
+    await store.saveTest({
+      id: 't2',
+      personId: 'person-1',
+      surfaceId: 's1',
+      routine: 'future-drop' as 'rig-drop',
+      createdAt: '2026-10-25T17:00:00.000Z',
+      device: 'iPhone',
+      sampleRateHz: 57,
+      reps: [],
+      verdict: BOGUS,
+    });
+    const root = mount(store);
+    await flush();
+
+    expect(root.querySelectorAll('[data-test-row]')).toHaveLength(2);
+    expect(text(root, '[data-history-list]')).toContain('Blue couch');
+    expect(text(root, '[data-history-list]')).toContain('future-drop');
+    expect(text(root, '[data-history-status]')).toBe('');
+  });
+
+  it('does not run the same test twice when its button is clicked twice', async () => {
+    const { store } = await seed();
+    let saves = 0;
+    const counting: Store = {
+      ...store,
+      saveTest: async (test) => {
+        saves += 1;
+        await store.saveTest(test);
+      },
+    };
+    const root = mount(counting);
+    await flush();
+    const button = root.querySelector<HTMLButtonElement>('[data-action="rerun"]')!;
+
+    button.click();
+    button.click();
+    await flush();
+
+    expect(saves).toBe(1);
+  });
+
   it('keeps the rest and skipped-rest facts the session recorded', async () => {
     const reps = analyzed({ bounceRatio: 0.5 }).map((rep, i) => (rep.ok ? { ...rep, restS: 20, restSkipped: i === 1 } : rep));
     const { store } = await seed({ testReps: reps });

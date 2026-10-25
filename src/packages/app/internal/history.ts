@@ -1,6 +1,7 @@
 import type { Person, RepResult, Surface, TestRecord } from '../../domain';
 import { analyzeRep, compare, isUsable, summarize } from '../../signal';
 import { PLACEMENT } from './placement';
+import { referenceRig, sameRig } from './rig';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 import { matchText } from './wording';
@@ -46,6 +47,13 @@ export function historyView(root: HTMLElement, deps: AppDeps): () => void {
   let people: Person[] = [];
   let surfaces = new Map<string, Surface>();
   let tests: TestRecord[] = [];
+  const running = new Set<string>();
+
+  const rowText = (test: TestRecord): string => {
+    const name = surfaces.get(test.surfaceId)?.name ?? 'Unnamed surface';
+    const routine = PLACEMENT[test.routine]?.label.split(':')[0] ?? test.routine;
+    return `${name} · ${routine} · ${test.createdAt.slice(0, 10)} · ${matchText(test.verdict)}`;
+  };
 
   const render = () => {
     empty.hidden = tests.length > 0;
@@ -54,8 +62,11 @@ export function historyView(root: HTMLElement, deps: AppDeps): () => void {
         const item = document.createElement('li');
         item.dataset.testRow = test.id;
         const label = document.createElement('span');
-        const name = surfaces.get(test.surfaceId)?.name ?? 'Unnamed surface';
-        label.textContent = `${name} · ${PLACEMENT[test.routine].label.split(':')[0]} · ${test.createdAt.slice(0, 10)} · ${matchText(test.verdict)}`;
+        try {
+          label.textContent = rowText(test);
+        } catch {
+          label.textContent = `Unreadable test (${test.id})`;
+        }
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'button button--quiet';
@@ -69,22 +80,29 @@ export function historyView(root: HTMLElement, deps: AppDeps): () => void {
   };
 
   const rerunOne = async (id: string, button: HTMLButtonElement) => {
+    if (running.has(id)) return;
+    running.add(id);
     button.disabled = true;
     try {
       const old = tests.find((t) => t.id === id);
       if (!old) return;
       // Re-read the people so a reference recalibrated since this screen opened is the one used.
       people = await deps.store.listPeople();
-      const updated = rerun(old, people.find((p) => p.id === old.personId));
+      const person = people.find((p) => p.id === old.personId);
+      const updated = rerun(old, person);
       await deps.store.saveTest(updated);
       tests = tests.map((t) => (t.id === id ? updated : t));
       if (mounted) {
         render();
-        status.textContent = `Analysis updated: ${matchText(updated.verdict)}.`;
+        const testRig = old.reps.find((rep) => rep.trace.rig)?.trace.rig;
+        const recorded = person?.references[old.routine] && referenceRig(person.references[old.routine]!);
+        const rigNote = testRig && recorded && !sameRig(testRig, recorded) ? ' Your reference was recorded with a different rig setup than this test.' : '';
+        status.textContent = `Analysis updated: ${matchText(updated.verdict)}, compared with your current reference.${rigNote}`;
       }
     } catch (error) {
       if (mounted) status.textContent = error instanceof Error ? error.message : 'Could not re-run the analysis.';
     } finally {
+      running.delete(id);
       button.disabled = false;
     }
   };
