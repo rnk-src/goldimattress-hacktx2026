@@ -108,15 +108,9 @@ describe('analyzeRep rejection', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects a moving hover as not-still', () => {
-    const result = analyzeRep(synthRep({ failure: 'moving-hover', hoverS: 2, durationS: 6 }));
+  it('drops a hover far too violent to be a hover as not-still', () => {
+    const result = analyzeRep(synthRep({ failure: 'moving-hover', failureSize: 4, hoverS: 2, durationS: 6 }));
     expect(result.ok === false && result.reasons).toEqual(['not-still']);
-  });
-
-  it('rejects a lean 7 degrees past the reference as lean-too-much', () => {
-    const trace = synthRep({ leanDeg: 15, failure: 'tilt', failureSize: 7 });
-    const result = analyzeRep(trace, refWithLean('sit-drop', 15));
-    expect(result.ok === false && result.reasons).toEqual(['lean-too-much']);
   });
 
   it('rejects a rep whose mass leaves the surface as left-surface', () => {
@@ -227,26 +221,77 @@ describe('analyzeRep features against the analytic answers', () => {
   });
 });
 
-describe('analyzeRep rep checks', () => {
-  it('rejects a smeared, slow impact as caught-landing', () => {
-    const result = analyzeRep(synthRep({ failure: 'caught-landing' }));
-    expect(result.ok === false && result.reasons).toEqual(['caught-landing']);
+describe('analyzeRep scoring', () => {
+  const ref = (lean = 15) => refWithLean('sit-drop', lean);
+  const scored = (trace: Parameters<typeof analyzeRep>[0], r?: ReferenceStats) => {
+    const result = analyzeRep(trace, r);
+    if (!result.ok) throw new Error(`expected a valid rep, got ${result.reasons}`);
+    return result;
+  };
+  const USABLE = 0.5;
+
+  it('weighs a clean rep 1 with no issues', () => {
+    const rep = scored(synthRep({ seed: 5, impactSpeed: 0.6 }), ref());
+    expect(rep.weight).toBe(1);
+    expect(rep.issues).toEqual([]);
+  });
+
+  it('keeps a rep that leans 7 degrees past the reference, at full weight', () => {
+    const rep = scored(synthRep({ leanDeg: 15, failure: 'tilt', failureSize: 7 }), ref());
+    expect(rep.weight).toBe(1);
   });
 
   it.each([
-    [0.75, 'too-fast'],
-    [0.45, 'too-slow'],
-  ] as const)('rejects an impact speed of %s m/s against a 0.6 m/s reference as %s', (impactSpeed, reason) => {
-    const result = analyzeRep(synthRep({ impactSpeed }), refWithLean('sit-drop', 15));
-    expect(result.ok === false && result.reasons).toEqual([reason]);
+    [35, 15, 'lean-too-much'],
+    [15, 40, 'lean-too-little'],
+  ] as const)('lowers the weight of a %s degree lean against a %s degree reference and names the fix', (lean, refLean, issue) => {
+    const rep = scored(synthRep({ leanDeg: lean }), ref(refLean));
+    expect(rep.weight).toBeLessThan(1);
+    expect(rep.weight).toBeGreaterThan(0);
+    expect(rep.issues).toContain(issue);
   });
 
-  it.each([0.5, 0.66, 0.7])('accepts an impact speed of %s m/s against a 0.6 m/s reference', (impactSpeed) => {
-    expect(analyzeRep(synthRep({ impactSpeed }), refWithLean('sit-drop', 15)).ok).toBe(true);
+  it('makes a rep 40 degrees off the reference unusable but still valid', () => {
+    const rep = scored(synthRep({ leanDeg: 55 }), ref());
+    expect(rep.weight).toBeLessThan(USABLE);
   });
 
-  it('does not check the impact speed without a reference', () => {
-    expect(analyzeRep(synthRep({ impactSpeed: 1.2, bounceHz: 1.5 })).ok).toBe(true);
+  it('lowers the weight of a smeared impact and names caught-landing', () => {
+    const rep = scored(synthRep({ failure: 'caught-landing' }));
+    expect(rep.weight).toBeLessThan(USABLE);
+    expect(rep.issues).toContain('caught-landing');
+  });
+
+  it.each([
+    [1.0, 'too-fast'],
+    [0.3, 'too-slow'],
+  ] as const)('lowers the weight at an impact speed of %s m/s against a 0.6 m/s reference (%s)', (impactSpeed, issue) => {
+    const rep = scored(synthRep({ impactSpeed }), ref());
+    expect(rep.weight).toBeLessThan(1);
+    expect(rep.issues).toContain(issue);
+  });
+
+  it.each([0.45, 0.5, 0.66, 0.75])('keeps full weight at %s m/s against a 0.6 m/s reference', (impactSpeed) => {
+    expect(scored(synthRep({ impactSpeed }), ref()).weight).toBe(1);
+  });
+
+  it('does not judge the impact speed or lean without a reference', () => {
+    const rep = scored(synthRep({ impactSpeed: 1.2, bounceHz: 1.5, leanDeg: 40 }));
+    expect(rep.weight).toBe(1);
+  });
+
+  it('lowers the weight of a wobbling hover and names not-still', () => {
+    const rep = scored(synthRep({ failure: 'moving-hover', hoverS: 2, durationS: 6 }));
+    expect(rep.weight).toBeLessThan(USABLE);
+    expect(rep.issues).toContain('not-still');
+  });
+
+  it('judges the hover jitter against the reference person own jitter scale', () => {
+    const trace = synthRep({ failure: 'moving-hover', failureSize: 0.8, hoverS: 2, durationS: 6 });
+    const strict = scored(trace, { ...ref(), jitterScale: 0.05 });
+    const loose = scored(trace, { ...ref(), jitterScale: 0.5 });
+    expect(strict.weight).toBeLessThan(loose.weight);
+    expect(loose.weight).toBe(1);
   });
 });
 

@@ -12,7 +12,7 @@ const HOVER_G_TOL = 2;
  * The margin is thin on both sides (1.1x above, 1.3x below), so a reference-relative limit may suit better.
  * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
  */
-const MAX_JITTER = 0.45;
+const MAX_JITTER = 1.0;
 
 /**
  * How far under hoverMinS a window's covered time may fall, s. Real timestamps are rounded to 1 ms and uneven,
