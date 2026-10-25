@@ -45,4 +45,8 @@ describe('summarize', () => {
     const reps = [10, 20, 30, 40, 50].map((v, i) => rep(v, [1, 1, 2, 1, 0.5][i]!));
     expect(summarize(reps).features.peakOverV.median).toBeCloseTo((18 + 60 + 16) / 3.3);
   });
+
+  it('throws on zero total weight instead of returning NaN', () => {
+    expect(() => summarize([rep(20, 0), rep(21, 0)])).toThrow(RangeError);
+  });
 });
