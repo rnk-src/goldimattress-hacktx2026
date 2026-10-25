@@ -103,6 +103,7 @@ function parseTrace(value: unknown, path: string): Trace {
     samples,
   };
   if (obj.rig !== undefined) trace.rig = parseRig(obj.rig, `${path}.rig`);
+  else if (trace.routine === 'rig-drop') throw new RecordingFormatError(`${path}.rig`, 'required for rig-drop');
   return trace;
 }
 
