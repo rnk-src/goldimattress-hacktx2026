@@ -1,4 +1,5 @@
 import type { Sample } from '../../domain';
+import { createRateMeter } from './rate-meter';
 import type { Access, SensorSource } from './source';
 
 export interface MotionEnv {
@@ -23,10 +24,8 @@ export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
   const env = injected ?? detectBrowserEnv();
   let access: Access | null = null;
   let onSample: ((sample: Sample) => void) | null = null;
-  let emitted = 0;
-  let firstT = 0;
-  let lastT = 0;
   let intervalMs: number | null = null;
+  const meter = createRateMeter();
   const onMotion = (event: Event) => {
     const motion = event as Event & {
       interval?: number;
@@ -46,9 +45,7 @@ export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
       return;
     }
     const t = motion.timeStamp / 1000;
-    if (emitted === 0) firstT = t;
-    lastT = t;
-    emitted += 1;
+    meter.add(t);
     if (typeof motion.interval === 'number') intervalMs = motion.interval;
     onSample?.({
       t,
@@ -67,9 +64,7 @@ export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
     start(callback) {
       if (access !== 'granted' || !env) throw new Error('Motion access has not been granted');
       onSample = callback;
-      emitted = 0;
-      firstT = 0;
-      lastT = 0;
+      meter.reset();
       intervalMs = null;
       env.target.addEventListener('devicemotion', onMotion);
     },
@@ -81,8 +76,7 @@ export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
       return intervalMs;
     },
     get sampleRateHz() {
-      if (emitted < 20 || lastT <= firstT) return null;
-      return (emitted - 1) / (lastT - firstT);
+      return meter.hz;
     },
   };
 }
