@@ -58,8 +58,17 @@ export type RepResult =
       /** m/s. */
       impactSpeed: number;
       leanDeg: number;
+      /** Hover RMS jitter before the drop, m/s². */
+      hoverJitter: number;
+      /** Quality weight, 0..1. A rep is usable at 0.5 or more. */
+      weight: number;
+      /** Seconds the person rested before this rep. Set by the session, not by `analyzeRep`. Unset for the first rep. */
+      restS?: number;
+      /** True when the person skipped the rest. Set by the session. */
+      restSkipped?: boolean;
       trace: Trace;
     }
+  /** Dropped: no usable signal. Never scored. */
   | { ok: false; reasons: RejectReason[]; trace: Trace };
 
 export interface HoverAssessment {

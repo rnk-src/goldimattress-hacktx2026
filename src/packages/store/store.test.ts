@@ -114,7 +114,15 @@ describe('tests', () => {
 
 describe('trace encoding', () => {
   const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
-  const accepted = (trace: Trace): RepResult => ({ ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace });
+  const accepted = (trace: Trace): RepResult => ({
+    ok: true,
+    features,
+    impactSpeed: 0.6,
+    leanDeg: 15,
+    hoverJitter: 0.1,
+    weight: 1,
+    trace,
+  });
   const rejected = (trace: Trace): RepResult => ({ ok: false, reasons: ['not-still'], trace });
 
   /** Storage that remembers everything written, to inspect the stored form. */
@@ -189,7 +197,15 @@ describe('capacity', () => {
     ...record(`t${i}`, 'p1', 's1'),
     reps: [
       ...[0, 1, 2, 3, 4].map(
-        (n): RepResult => ({ ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace: synthRep({ seed: i * 10 + n }) }),
+        (n): RepResult => ({
+          ok: true,
+          features,
+          impactSpeed: 0.6,
+          leanDeg: 15,
+          hoverJitter: 0.1,
+          weight: 1,
+          trace: synthRep({ seed: i * 10 + n }),
+        }),
       ),
       { ok: false, reasons: ['not-still'], trace: synthRep({ seed: i * 10 + 9 }) },
     ],
@@ -254,6 +270,15 @@ describe('schema versioning and bad data', () => {
     expect(JSON.parse(rewritten)).toMatchObject({ version: 1 });
     expect(rewritten).not.toContain('"ax"');
     expect(await store.listTests()).toHaveLength(1);
+  });
+
+  it('gives reps saved before weights existed a full weight', async () => {
+    const storage = memoryStorage();
+    const trace = synthRep({ seed: 8 });
+    const old = { ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace };
+    storage.setItem(KEY, JSON.stringify({ people: [], surfaces: [], tests: [{ ...record('t1', 'p1', 's1'), reps: [old] }] }));
+    const [loaded] = await createLocalStore(storage).listTests();
+    expect(loaded!.reps[0]).toMatchObject({ ok: true, weight: 1 });
   });
 
   const v1 = (parts: object) => JSON.stringify({ version: 1, people: [], surfaces: [], tests: [], ...parts });
