@@ -48,9 +48,6 @@ const encodeRep = (r: RepResult): StoredRep => ({ ...r, trace: encodeTrace(r.tra
 const decodeRep = (r: StoredRep): RepResult =>
   ({ ...(r.ok ? { weight: 1, hoverJitter: 0, issues: [] } : {}), ...r, trace: decodeTrace(r.trace) }) as RepResult;
 
-// shortcut: a reference saved with the old mean and std shape is dropped, so that person recalibrates; dev data only.
-const isCurrentStats = (s: ReferenceStats): boolean => typeof s.jitterScale === 'number' && 'median' in s.leanDeg;
-
 export function encodePerson(p: Person): StoredPerson {
   const references: StoredPerson['references'] = {};
   for (const routine of Object.keys(p.references) as Routine[]) {
@@ -64,7 +61,7 @@ export function decodePerson(p: StoredPerson): Person {
   const references: Person['references'] = {};
   for (const routine of Object.keys(p.references) as Routine[]) {
     const ref = p.references[routine]!;
-    if (isCurrentStats(ref.stats)) references[routine] = { stats: ref.stats, reps: ref.reps.map(decodeRep) };
+    references[routine] = { stats: ref.stats, reps: ref.reps.map(decodeRep) };
   }
   return { ...p, references };
 }

@@ -31,7 +31,10 @@ export type SynthFailure =
   | 'moving-hover'
   | 'caught-landing'
   | 'left-surface'
-  | 'no-drop';
+  | 'no-drop'
+  | 'tilted-landing'
+  | 'hand-drag'
+  | 'height-error';
 
 export interface SynthOptions {
   routine?: Routine;
@@ -43,7 +46,9 @@ export interface SynthOptions {
   bounceHz?: number;
   /** A₂/A₁ of consecutive bounce peaks. Default 0.4. */
   bounceRatio?: number;
-  /** Degrees from the gravity axis. Default 15. */
+  /** 'rig-drop' only: nominal release height, cm. Default 10. Sets the free fall and v = √(2gh). */
+  dropHeightCm?: number;
+  /** Degrees from the gravity axis. Default 15 (0 for 'rig-drop', where the phone is flat). */
   leanDeg?: number;
   /** Still hover before the drop, s. Default 1.0. */
   hoverS?: number;
@@ -61,6 +66,9 @@ export interface SynthOptions {
    * 'caught-landing': frequency of the smeared hump, Hz, default 0.4 (stops after 1/(π·f) s).
    * 'left-surface': length of the 0 g flight 0.4 s after impact, s, default 0.2.
    * 'moving-hover': amplitude of a 3 Hz wobble of |a| during the hover, m/s², default 1.
+   * 'tilted-landing' (rig): degrees the phone tilts at impact, default 10.
+   * 'hand-drag' (rig): |a| during the fall as a fraction of g, default 0.3.
+   * 'height-error' (rig): actual release height divided by the nominal one, default 1.5.
    */
   failureSize?: number;
   seed?: number;
@@ -87,6 +95,29 @@ function upAxis(routine: Routine, leanDeg: number): Vec {
   return routine === 'sit-drop' ? [0, c, s] : [0, s, c];
 }
 
+/** Release height of a rig drop when no `dropHeightCm` is given, cm. */
+const RIG_HEIGHT_CM = 10;
+
+/**
+ * Fall time and impact speed of the descent. A body drop uses `dropS` and `impactSpeed`.
+ * A rig drop falls from `dropHeightCm` (scaled by 'height-error', slowed by 'hand-drag').
+ */
+export function descentOf(opts: SynthOptions): { dropS: number; impactSpeed: number } {
+  if ((opts.routine ?? DEFAULTS.routine) !== 'rig-drop') {
+    return { dropS: opts.dropS ?? DEFAULTS.dropS, impactSpeed: opts.impactSpeed ?? DEFAULTS.impactSpeed };
+  }
+  const failure = opts.failure ?? 'none';
+  const scale = failure === 'height-error' ? (opts.failureSize ?? 1.5) : 1;
+  const metres = ((opts.dropHeightCm ?? RIG_HEIGHT_CM) * scale) / 100;
+  // shortcut: a rig fall is one constant |a| (0 g, or the hand-drag value). Real hands add release noise.
+  // |a| = m·g during the fall, so the net acceleration is g(1 − m).
+  const drag = failure === 'hand-drag' ? (opts.failureSize ?? 0.3) : 0;
+  if (!(drag >= 0 && drag < 1)) throw new RangeError('hand-drag failureSize must be in [0, 1)');
+  const net = GRAVITY * (1 - drag);
+  const dropS = Math.sqrt((2 * metres) / net);
+  return { dropS, impactSpeed: net * dropS };
+}
+
 /** One rep: a still hover, then a drop onto a damped spring. Same options and seed give the same trace. */
 export function synthRep(opts: SynthOptions = {}): Trace {
   const routine = opts.routine ?? DEFAULTS.routine;
@@ -95,14 +126,17 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   const noise = opts.noise ?? DEFAULTS.noise;
   const rotation = opts.rotation ?? [0, 0, 0];
   const failure = opts.failure ?? 'none';
+  const isRig = routine === 'rig-drop';
   const tilt = failure === 'tilt' ? (opts.failureSize ?? 10) : 0;
+  const landingTilt = failure === 'tilted-landing' ? (opts.failureSize ?? 10) : 0;
   const wobble = failure === 'moving-hover' ? (opts.failureSize ?? 1) : 0;
-  const up = upAxis(routine, (opts.leanDeg ?? DEFAULTS.leanDeg) + tilt);
-  const impactSpeed = opts.impactSpeed ?? DEFAULTS.impactSpeed;
+  const leanDeg = (opts.leanDeg ?? (isRig ? 0 : DEFAULTS.leanDeg)) + tilt;
+  const up = upAxis(routine, leanDeg);
+  const landingUp = upAxis(routine, leanDeg + landingTilt);
+  const { dropS, impactSpeed } = descentOf(opts);
   const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
   const hoverS = opts.hoverS ?? DEFAULTS.hoverS;
-  const dropS = opts.dropS ?? DEFAULTS.dropS;
   for (const [name, value] of [
     ['dropS', dropS],
     ['hoverS', hoverS],
@@ -136,7 +170,8 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   const samples: Sample[] = [];
   for (let i = 0; i < count; i++) {
     const t = i / sampleRateHz;
-    const [x, y, z] = rotate(up.map((u) => u * total(t)) as Vec, rotation);
+    const axis = t >= impactT ? landingUp : up;
+    const [x, y, z] = rotate(axis.map((u) => u * total(t)) as Vec, rotation);
     samples.push({
       t,
       ax: x + noise * rng.gaussian(),

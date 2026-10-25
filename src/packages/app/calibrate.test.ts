@@ -18,12 +18,12 @@ afterEach(() => {
 
 const REST_S = 22;
 
-const stat = (median: number): FeatureStats => ({ median, mad: median / 10 });
+const stat = (center: number): FeatureStats => ({ center, mad: center / 10 });
 const bridgeStats = (): ReferenceStats => ({
   routine: 'bridge-drop',
   repCount: 5,
   createdAt: '2026-10-24T16:00:00.000Z',
-  features: { peakOverV: stat(10), stopTime: stat(0.2), bounceRatio: stat(0.4), settleTime: stat(1.5) },
+  features: { peak: stat(12), peakOverV: stat(10), stopTime: stat(0.2), bounceRatio: stat(0.4), settleTime: stat(1.5) },
   leanDeg: stat(10),
   impactSpeed: stat(0.6),
   jitterScale: 0.1,
@@ -460,6 +460,12 @@ describe('calibrate screen', () => {
     await flush();
     expect(starts).toBe(0);
     expect(awake).toEqual([]);
+  });
+
+  it('does not offer rig-drop, which needs a rig the calibrate screen cannot set', () => {
+    const { root } = mount(createReplaySource(traceOf([])));
+    const values = Array.from(root.querySelectorAll<HTMLOptionElement>('select[name="routine"] option'), (o) => o.value);
+    expect(values).toEqual(['sit-drop', 'bridge-drop']);
   });
 
   it('shows the bridge-drop placement and rest time from the routine spec', () => {

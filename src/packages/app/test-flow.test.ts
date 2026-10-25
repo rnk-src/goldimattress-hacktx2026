@@ -339,7 +339,7 @@ const verdict = (over: Partial<Verdict>): Verdict => ({
   firmer: false,
   bouncier: false,
   match: 100,
-  perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  perFeatureZ: { peak: 12, peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
   hardnessInterval: [0, 0],
   springinessInterval: [0, 0],
   confidence: 'confident',

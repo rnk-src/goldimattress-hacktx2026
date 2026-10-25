@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReferenceStats, Routine, Sample } from '../domain';
 import { expectedFeatures, synthRep } from '../testkit';
 import type { SynthOptions } from '../testkit';
-import { analyzeRep, assessHover, createPositionTracker, routineSpec } from './index';
+import { DEFAULT_RIG, analyzeRep, assessHover, createPositionTracker, routineSpec } from './index';
 
 /** The still part of a synthetic rep: everything before the drop. */
 function hoverOf(opts: SynthOptions): Sample[] {
@@ -11,15 +11,15 @@ function hoverOf(opts: SynthOptions): Sample[] {
 }
 
 /** A reference whose only used field is the lean. */
-function refWithLean(routine: Routine, median: number): ReferenceStats {
-  const flat = { median: 0, mad: 0 };
+function refWithLean(routine: Routine, center: number): ReferenceStats {
+  const flat = { center: 0, mad: 0 };
   return {
     routine,
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
-    features: { peakOverV: flat, stopTime: flat, bounceRatio: flat, settleTime: flat },
-    leanDeg: { median, mad: 1 },
-    impactSpeed: { median: 0.6, mad: 0.03 },
+    features: { peak: flat, peakOverV: flat, stopTime: flat, bounceRatio: flat, settleTime: flat },
+    leanDeg: { center, mad: 1 },
+    impactSpeed: { center: 0.6, mad: 0.03 },
     jitterScale: 0.1,
   };
 }
@@ -35,6 +35,19 @@ describe('routineSpec', () => {
 
   it('gives the bridge drop a longer capture than the sit-drop', () => {
     expect(routineSpec('bridge-drop').captureS).toBeGreaterThan(routineSpec('sit-drop').captureS);
+  });
+});
+
+describe('assessHover rig-drop lean', () => {
+  const still = (az: number): Sample[] =>
+    Array.from({ length: 60 }, (_, i) => ({ t: i / 60, ax: 0, ay: 0, az }));
+
+  it('reads a face-up rig as level', () => {
+    expect(assessHover(still(9.81), 'rig-drop').leanDeg).toBeCloseTo(0, 5);
+  });
+
+  it('reads a face-down rig as flipped, not level', () => {
+    expect(assessHover(still(-9.81), 'rig-drop').leanDeg).toBeCloseTo(180, 5);
   });
 });
 
@@ -138,6 +151,13 @@ const GRID = [60, 100].flatMap((sampleRateHz) =>
 );
 
 describe('analyzeRep features against the analytic answers', () => {
+  it.each(GRID.map(([name, opts]) => ({ name, opts })))('peak within 10% at $name', ({ opts }) => {
+    const result = analyzeRep(synthRep(opts));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Math.abs(result.features.peak / expectedFeatures(opts).peak - 1)).toBeLessThan(0.1);
+  });
+
   it.each(GRID.map(([name, opts]) => ({ name, opts })))('peakOverV within 10% at $name', ({ opts }) => {
     const result = analyzeRep(synthRep(opts));
     expect(result.ok).toBe(true);
@@ -467,5 +487,32 @@ describe('analyzeRep covariates', () => {
     if (!rep.ok) throw new Error('expected an ok rep');
     expect(rep.hoverJitter).toBeCloseTo(assessHover(hoverOf(opts), 'sit-drop').jitter, 1);
     expect(rep.weight).toBe(1);
+  });
+});
+
+describe('rig-drop contract', () => {
+  it('gives rig-drop a 20 degree level limit and a 3 s capture', () => {
+    const spec = routineSpec('rig-drop');
+    expect(spec.maxLeanDeg).toBe(20);
+    expect(spec.captureS).toBe(3);
+    expect(spec.preRollS).toBeGreaterThanOrEqual(1);
+  });
+
+  it('exports the default rig: 1.9 kg slab plus 0.2 kg phone', () => {
+    expect(DEFAULT_RIG).toEqual({ massKg: 2.1, baseCm: [17.5, 9], dropHeightCm: 5, spot: 'center' });
+  });
+
+  it('measures the rig-drop lean on the flat axis (az)', () => {
+    const flat = Array.from({ length: 30 }, (_, i) => ({ t: i / 60, ax: 0, ay: 0, az: 9.81 }));
+    expect(assessHover(flat, 'rig-drop').leanDeg).toBeCloseTo(0, 5);
+    const onEnd = flat.map((s) => ({ ...s, ay: 9.81, az: 0 }));
+    expect(assessHover(onEnd, 'rig-drop').leanDeg).toBeCloseTo(90, 5);
+  });
+
+  it('returns no-drop-found for a rig-drop trace until the free-fall model exists', () => {
+    const trace = { ...synthRep({}), routine: 'rig-drop' as const };
+    const result = analyzeRep(trace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reasons).toEqual(['no-drop-found']);
   });
 });

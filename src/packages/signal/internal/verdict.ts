@@ -1,10 +1,8 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
-import { FEATURES } from './features-table';
-import { weightedMedian } from './math';
-import { isUsable } from './reference';
+import { featuresOf } from './features-table';
+import { profileOf } from './routine';
+import { summarize, usableReps } from './summarize';
 
-/** Share of |μ_ref| below which a spread is treated as noise. */
-const REL_FLOOR = 0.08;
 /** A reference of fewer reps than this has an unreliable MAD, so its floors widen. */
 const FULL_REFERENCE_REPS = 5;
 const SMALL_REFERENCE_FLOOR_FACTOR = 1.5;
@@ -30,7 +28,7 @@ const straddles = ([lo, hi]: [number, number]) => {
 };
 
 /**
- * Verdict of the weighted median of the usable test reps against the reference.
+ * Verdict of the usable test reps (the summarize centre) against the reference.
  * Hardness is left out of the match until `hardnessReliable` is true.
  * shortcut: hardnessReliable defaults to false because the hardness axis reads wrong across surfaces; flip it after the multi-surface data fixes the axis.
  */
@@ -39,20 +37,20 @@ export function compare(
   ref: ReferenceStats,
   { hardnessReliable = false }: { hardnessReliable?: boolean } = {},
 ): Verdict {
-  const usable = reps.flatMap((r) => (r.ok && isUsable(r) ? [r] : []));
+  const usable = usableReps(reps);
   if (usable.length === 0) throw new RangeError('compare needs at least one usable rep');
   if (usable.some((r) => r.trace.routine !== ref.routine)) {
     throw new RangeError(`rep routine does not match reference routine ${ref.routine}`);
   }
-  const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
+  const summary = summarize(usable);
+  const { relFloor } = profileOf(ref.routine).model;
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
-  for (const { name, absFloor, axis, sign } of FEATURES) {
-    const median = weightedMedian(usable.map((r) => r.features[name]), weights);
-    const { median: mu, mad } = ref.features[name];
-    const sigmaEff = Math.max(mad, floorFactor * Math.max(REL_FLOOR * Math.abs(mu), absFloor));
-    const value = (median - mu) / sigmaEff;
+  for (const { name, absFloor, axis, sign } of featuresOf(ref.routine)) {
+    const { center: mu, mad } = ref.features[name];
+    const sigmaEff = Math.max(mad, floorFactor * Math.max(relFloor * Math.abs(mu), absFloor));
+    const value = (summary.features[name].center - mu) / sigmaEff;
     z[name] = value;
     if (axis !== null) axes[axis].push(sign * value);
   }
@@ -64,11 +62,11 @@ export function compare(
   const springinessInterval: [number, number] = [springiness - se, springiness + se];
 
   let confidence: Confidence = 'confident';
-  if (usable.length < MIN_REPS || average(weights) < MIN_MEAN_WEIGHT) confidence = 'not-enough-data';
+  if (usable.length < MIN_REPS || summary.meanWeight < MIN_MEAN_WEIGHT) confidence = 'not-enough-data';
   else if (straddles(springinessInterval) || (hardnessReliable && straddles(hardnessInterval))) confidence = 'close-call';
 
   const caveats: Caveat[] = [];
-  if (Math.abs(weightedMedian(usable.map((r) => r.leanDeg), weights) - ref.leanDeg.median) > LEAN_CAVEAT_DEG) {
+  if (Math.abs(summary.leanDeg.center - ref.leanDeg.center) > LEAN_CAVEAT_DEG) {
     caveats.push('lean-differs');
   }
   if (usable.some((r) => r.restSkipped)) caveats.push('rest-skipped');

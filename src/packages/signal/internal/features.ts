@@ -8,7 +8,7 @@ const SETTLE_BAND = 0.05 * GRAVITY;
 const MIN_BOUNCE_PEAK = 0.12;
 
 /**
- * The four rep features from the samples at and after the impact (`impact` indexes `samples`, and
+ * The five rep features from the samples at and after the impact (`impact` indexes `samples`, and
  * is at least 1). Everything is the excess of |a| over 1 g, and times count from the impact, which
  * falls midway between the last descent sample and the first impact sample.
  * `peakOverV` is the first lobe's peak over the impact speed. Null when there is no positive first lobe or any feature is not finite.
@@ -34,6 +34,7 @@ export function repFeatures(
         ((t[firstLobeEnd]! - t[firstLobeEnd - 1]!) * excess[firstLobeEnd - 1]!) /
           (excess[firstLobeEnd - 1]! - excess[firstLobeEnd]!);
   const features = {
+    peak,
     peakOverV: peak / impactSpeed,
     stopTime: crossing - impactT,
     bounceRatio: bounceRatioOf(excess, firstLobeEnd),

@@ -8,6 +8,7 @@ import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 
 const FEATURE_UNITS: Record<FeatureName, string> = {
+  peak: 'm/s²',
   peakOverV: '1/s',
   stopTime: 's',
   bounceRatio: '',
@@ -22,6 +23,7 @@ const droppedNote = (count: number): string =>
   count === 0 ? '' : `<p>dropped ${count} ${count === 1 ? 'rep' : 'reps'} that didn't match the others</p>`;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {
+  // shortcut: rig-drop hidden until R7 adds the rig setup screen, remove then
   root.innerHTML = `
     <div class="app-shell">
       ${brandHeader('Calibrate')}
@@ -29,7 +31,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         <h1>Calibrate on a surface you like</h1>
         <label>Routine
           <select name="routine">
-            ${(Object.keys(PLACEMENT) as Routine[]).map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
+            ${(Object.keys(PLACEMENT) as Routine[]).filter((r) => r !== 'rig-drop').map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
           </select>
         </label>
         <label data-profile-control hidden>Profile
@@ -214,7 +216,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         ? `<p>${accepted} accepted reps${outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<p data-save-status role="status">${saveStatus}</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
             .map(
               (name) =>
-                `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
+                `<div><dt>${name}</dt><dd>${built.ref.features[name].center.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
             )
             .join('')}</dl>`
         : `<p>${accepted} accepted reps. ${BUILD_FAILURE[built.reason]}</p>`;

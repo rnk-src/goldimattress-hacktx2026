@@ -1,7 +1,7 @@
 import type { HoverAssessment, RejectReason, Routine, Sample } from '../../domain';
 import { GRAVITY } from './constants';
-import { magnitude, std } from './math';
-import { routineSpec } from './routine';
+import { clamp, magnitude, meanVector, std } from './math';
+import { profileOf } from './routine';
 
 /** A hover must read about 1 g, so a window of zeros or free fall is not a hover, m/s². */
 const HOVER_G_TOL = 2;
@@ -23,16 +23,15 @@ export const DROP_JITTER = 1.0;
  */
 const COVERAGE_TOL_S = 0.002;
 
-/** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
-const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
-
-/** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign. */
+/** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign unless the routine's model signs the lean. */
 function leanOf(window: readonly Sample[], routine: Routine): number {
   if (window.length === 0) return 0;
-  const mean = (key: 'ax' | 'ay' | 'az') => window.reduce((sum, s) => sum + s[key], 0) / window.length;
-  const m = { ax: mean('ax'), ay: mean('ay'), az: mean('az') };
+  const m = meanVector(window);
   const length = magnitude(m);
-  const deg = (Math.acos(Math.min(1, Math.abs(m[LEAN_AXIS[routine]]) / length)) * 180) / Math.PI;
+  const { leanAxis, model } = profileOf(routine);
+  const along = m[leanAxis];
+  const cos = model.signedLean ? along : Math.abs(along);
+  const deg = (Math.acos(clamp(cos / length, -1, 1)) * 180) / Math.PI;
   // Zero or non-finite samples have no direction, so the lean is 0.
   return Number.isFinite(deg) ? deg : 0;
 }
@@ -52,7 +51,7 @@ export function assessHover(
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
     Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
-    jitter <= maxJitter && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
+    jitter <= maxJitter && coveredS >= profileOf(routine).spec.hoverMinS - COVERAGE_TOL_S;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   return { still, jitter, leanDeg, reasons };

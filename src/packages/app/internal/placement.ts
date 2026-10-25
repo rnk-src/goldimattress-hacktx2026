@@ -9,4 +9,9 @@ export const PLACEMENT: Record<Routine, { label: string; text: string }> = {
     label: 'Bridge drop: mattresses',
     text: 'Lie on your back in the middle of the bed. Hold the phone flat on your lower belly over the hip bones with both hands. Lift your hips about 10 cm, hold still, go limp and drop.',
   },
+  // shortcut: placeholder text until the rig setup and result screens (R7) are built.
+  'rig-drop': {
+    label: 'Rig drop: any surface',
+    text: 'Strap the phone face up on the slab and rest the slab on the spacer. Hold it level, then let go with both hands.',
+  },
 };
