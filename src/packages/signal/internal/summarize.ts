@@ -10,7 +10,6 @@ const TRIM_FROM_REPS = 5;
 /**
  * The one place that computes the robust centre and spread of usable reps.
  * Centre: weighted trimmed mean. Spread: scaled MAD about the median, with no outlier dropping.
- * shortcut: FeatureStats.median holds a trimmed mean until the rename (R8).
  */
 export function summarize(reps: readonly RepResult[]): {
   features: Record<FeatureName, FeatureStats>;
@@ -23,7 +22,7 @@ export function summarize(reps: readonly RepResult[]): {
   const features = Object.fromEntries(
     FEATURES.map(({ name }) => {
       const xs = ok.map((r) => r.features[name]);
-      return [name, { median: weightedTrimmedMean(xs, ws, TRIM, TRIM_FROM_REPS), mad: scaledMad(xs, ws, weightedMedian(xs, ws)) }];
+      return [name, { center: weightedTrimmedMean(xs, ws, TRIM, TRIM_FROM_REPS), mad: scaledMad(xs, ws, weightedMedian(xs, ws)) }];
     }),
   ) as Record<FeatureName, FeatureStats>;
   return { features, n: ok.length, meanWeight: ws.reduce((s, w) => s + w, 0) / ws.length };

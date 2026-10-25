@@ -32,14 +32,14 @@ function rep(
 /** Reference with chosen per-feature std (default 10% of the mean). */
 function ref(std: Partial<Record<FeatureName, number>> = {}, base: RepFeatures = BASE): ReferenceStats {
   const features = {} as ReferenceStats['features'];
-  for (const k of Object.keys(base) as FeatureName[]) features[k] = { median: base[k], mad: std[k] ?? 0.1 * base[k] };
+  for (const k of Object.keys(base) as FeatureName[]) features[k] = { center: base[k], mad: std[k] ?? 0.1 * base[k] };
   return {
     routine: 'sit-drop',
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
     features,
-    leanDeg: { median: 15, mad: 1 },
-    impactSpeed: { median: 0.6, mad: 0.02 },
+    leanDeg: { center: 15, mad: 1 },
+    impactSpeed: { center: 0.6, mad: 0.02 },
     jitterScale: 0.1,
   };
 }
@@ -241,11 +241,11 @@ describe('buildReference', () => {
     expect(r.ref.routine).toBe('sit-drop');
     expect(r.ref.repCount).toBe(5);
     expect(r.ref.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(r.ref.features.peakOverV.median).toBeCloseTo(20);
+    expect(r.ref.features.peakOverV.center).toBeCloseTo(20);
     expect(r.ref.features.peakOverV.mad).toBeCloseTo(1.4826);
     expect(r.ref.features.stopTime.mad).toBeCloseTo(0);
-    expect(r.ref.leanDeg.median).toBeCloseTo(16);
-    expect(r.ref.impactSpeed.median).toBeCloseTo(0.62);
+    expect(r.ref.leanDeg.center).toBeCloseTo(16);
+    expect(r.ref.impactSpeed.center).toBeCloseTo(0.62);
   });
 
   it('weights the median by rep weight', () => {
@@ -253,8 +253,8 @@ describe('buildReference', () => {
     const even = buildReference(reps, 'sit-drop');
     const heavy = buildReference([reps[0]!, reps[1]!, { ...(reps[2] as object), weight: 3 } as RepResult], 'sit-drop');
     if (!even.ok || !heavy.ok) throw new Error('expected ok');
-    expect(even.ref.features.peakOverV.median).toBeCloseTo(20);
-    expect(heavy.ref.features.peakOverV.median).toBeCloseTo(30);
+    expect(even.ref.features.peakOverV.center).toBeCloseTo(20);
+    expect(heavy.ref.features.peakOverV.center).toBeCloseTo(30);
   });
 
   it('drops a far outlier by itself when 5 or more reps are usable', () => {
@@ -262,7 +262,7 @@ describe('buildReference', () => {
     if (!r.ok) throw new Error('expected ok');
     expect(r.dropped).toEqual([4]);
     expect(r.ref.repCount).toBe(4);
-    expect(r.ref.features.peak.median).toBeCloseTo(20.05);
+    expect(r.ref.features.peak.center).toBeCloseTo(20.05);
   });
 
   it('keeps every rep when fewer than 5 are usable', () => {
@@ -348,7 +348,7 @@ describe('buildReference', () => {
     const r = buildReference([19, 19.8, 20.4, 20.6, 23].map((peakOverV) => rep({ peakOverV })), 'sit-drop');
     if (!r.ok) throw new Error('expected ok');
     expect(r.dropped).toEqual([]);
-    expect(r.ref.features.peakOverV.median).toBeCloseTo((19.8 + 20.4 + 20.6) / 3);
+    expect(r.ref.features.peakOverV.center).toBeCloseTo((19.8 + 20.4 + 20.6) / 3);
   });
 });
 

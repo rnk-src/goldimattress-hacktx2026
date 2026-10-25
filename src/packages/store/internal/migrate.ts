@@ -4,13 +4,13 @@ import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
 export interface StoredData {
-  version: 1;
+  version: 2;
   people: StoredPerson[];
   surfaces: Surface[];
   tests: StoredTest[];
 }
 
-export const emptyStored = (): StoredData => ({ version: 1, people: [], surfaces: [], tests: [] });
+export const emptyStored = (): StoredData => ({ version: 2, people: [], surfaces: [], tests: [] });
 
 const isLists = (x: Record<string, unknown>): boolean =>
   Array.isArray(x.people) && Array.isArray(x.surfaces) && Array.isArray(x.tests);
@@ -32,7 +32,7 @@ const areReps = (x: unknown): boolean =>
   Array.isArray(x) && x.every((rep) => isObject(rep) && isStoredTrace(rep.trace));
 
 /**
- * Checks the parts of a v1 blob the decoders rely on: people with references, tests with reps.
+ * Checks the parts of a v1 or v2 blob the decoders rely on: people with references, tests with reps.
  * shortcut: scalar fields (names, stats, verdicts) are trusted, so a hand-edited blob can still
  * misbehave; add a schema check if the data ever comes from outside this app.
  */
@@ -51,14 +51,33 @@ function isValidV1(data: Record<string, unknown>): boolean {
   );
 }
 
-/** v0 had no version field and kept every trace as a plain array of samples. */
-function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestRecord[] }): StoredData {
+/** v0 had no version field and kept every trace as a plain array of samples. Returns v1 data. */
+function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestRecord[] }): Record<string, unknown> {
   return {
     version: 1,
     people: old.people.map(encodePerson),
     surfaces: old.surfaces,
     tests: old.tests.map(encodeTest),
   };
+}
+
+const renameMedian = (s: unknown): unknown =>
+  isObject(s) && 'median' in s ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k === 'median' ? 'center' : k, v])) : s;
+
+/** v1 called `FeatureStats.center` `median`. Renames it in every stored reference. */
+function migrateV1(data: Record<string, unknown>): StoredData {
+  const people = (data.people as Record<string, unknown>[]).map((p) => ({
+    ...p,
+    references: Object.fromEntries(
+      Object.entries(p.references as Record<string, Record<string, unknown>>).map(([routine, ref]) => {
+        const stats = ref.stats as Record<string, unknown> | undefined;
+        if (!isObject(stats)) return [routine, ref];
+        const features = isObject(stats.features) ? Object.fromEntries(Object.entries(stats.features).map(([k, v]) => [k, renameMedian(v)])) : stats.features;
+        return [routine, { ...ref, stats: { ...stats, features, leanDeg: renameMedian(stats.leanDeg), impactSpeed: renameMedian(stats.impactSpeed) } }];
+      }),
+    ),
+  }));
+  return { ...data, version: 2, people } as unknown as StoredData;
 }
 
 /**
@@ -79,7 +98,8 @@ export function readStored(raw: string | null): StoredData {
     return emptyStored();
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version === undefined) return migrateV0(data as Parameters<typeof migrateV0>[0]);
-  if (data.version === 1) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
+  if (data.version === undefined) return migrateV1(migrateV0(data as Parameters<typeof migrateV0>[0]));
+  if (data.version === 1) return isValidV1(data) ? migrateV1(data) : emptyStored();
+  if (data.version === 2) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
   return emptyStored();
 }

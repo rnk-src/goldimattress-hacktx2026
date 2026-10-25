@@ -122,7 +122,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
           ? `<p>${accepted} accepted reps</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
               .map(
                 (name) =>
-                  `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
+                  `<div><dt>${name}</dt><dd>${built.ref.features[name].center.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
               )
               .join('')}</dl>`
           : `<p>${accepted} accepted reps. ${BUILD_FAILURE[built.reason]}</p>`;
