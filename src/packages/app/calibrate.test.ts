@@ -98,6 +98,15 @@ describe('calibrate screen', () => {
     expect(root.querySelector<HTMLElement>('[data-calibration-result]')?.hidden).toBe(true);
   });
 
+  it('keeps the fix for a rejected rep visible next to the rest cue', async () => {
+    const stream = goodStream([{ failure: 'caught-landing' }]).slice(0, 420);
+    const { root } = mount(createReplaySource(traceOf(stream)));
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+    expect(root.querySelector('[data-rep-feedback]')?.textContent).toContain(rejectMessage('caught-landing'));
+    expect(root.querySelector('[data-cue-text]')?.textContent).toContain('Rest');
+  });
+
   it('shows the fix for a rejected rep and does not fill a dot for it', async () => {
     const stream = goodStream([{ failure: 'caught-landing' }]);
     const { root } = mount(createReplaySource(traceOf(stream)));
