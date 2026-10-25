@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Person, RepResult, Surface, TestRecord, Trace, Verdict } from '../domain';
 import { memoryStorage, synthRep } from '../testkit';
 import { StoreFullError, createLocalStore } from './index';
@@ -195,6 +195,18 @@ describe('trace encoding', () => {
     expect(written).not.toContain('"ax"');
     expect(written.length).toBeLessThan(trace.samples.length * 16 * 2);
   });
+
+  it('does not decode stored traces when saving another record', async () => {
+    const storage = memoryStorage();
+    const trace = synthRep({ seed: 6 });
+    const store = createLocalStore(storage);
+    await store.saveTest({ ...record('t1', 'p1', 's1'), reps: [accepted(trace)] });
+    const decode = vi.spyOn(globalThis, 'atob');
+
+    await store.saveSurface(surface('s2', 'New couch'));
+
+    expect(decode).not.toHaveBeenCalled();
+  });
 });
 
 describe('capacity', () => {
@@ -249,6 +261,7 @@ describe('capacity', () => {
 
 describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
+  const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
   const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
   it('stamps what it writes with schema version 1', async () => {
@@ -330,4 +343,14 @@ describe('schema versioning and bad data', () => {
       expect(await store.listPeople()).toEqual([person('p1')]);
     },
   );
+
+  it('backs up corrupt data before a save replaces it', async () => {
+    const storage = memoryStorage();
+    const corrupt = '{not json';
+    storage.setItem(KEY, corrupt);
+
+    await createLocalStore(storage).savePerson(person('p1'));
+
+    expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(corrupt);
+  });
 });
