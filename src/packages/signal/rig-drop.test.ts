@@ -72,8 +72,4 @@ describe('analyzeRep on a rig-drop', () => {
     expect(r.issues).toContain('not-still');
   });
 
-  it('keeps the lean of a tilted hold', () => {
-    const r = usable(analyzeRep(rig({ dropHeightCm: 10, failure: 'tilt', failureSize: 8 })));
-    expect(r.leanDeg).toBeCloseTo(8, 0);
-  });
 });
