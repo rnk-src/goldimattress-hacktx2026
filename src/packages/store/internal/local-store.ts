@@ -31,6 +31,15 @@ function upsert<T extends { id: string }>(list: T[], item: T): void {
  * Keeps everything in one storage value and rewrites it on each save.
  * shortcut: rewrite-all is fine for ~100 tests, split into per-test keys if saves get slow.
  */
+const isJson = (text: string): boolean => {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export function createLocalStore(storage: StorageLike = localStorage): Store {
   const load = (): StoredData => readStored(storage.getItem(KEY));
   const save = (data: StoredData, corruptBackup?: string) => {
@@ -38,8 +47,9 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
       if (corruptBackup !== undefined) {
         try {
           storage.setItem(CORRUPT_BACKUP_KEY, corruptBackup);
-        } catch {
-          // The backup is a courtesy; a full quota must not also block the save that repairs the store.
+        } catch (e) {
+          // Only text that is not JSON at all is expendable. Readable data from a newer app must not be overwritten unbacked.
+          if (isJson(corruptBackup)) throw e;
         }
       }
       storage.setItem(KEY, JSON.stringify(data));
