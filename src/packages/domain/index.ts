@@ -165,6 +165,21 @@ export interface Surface {
   type: SurfaceType;
 }
 
+/** The experimental rig scores of a test and the measurements behind them. Relative, not a calibrated rating. */
+export interface RigScoreSummary {
+  /** 0 to 100, or null when the drops could not support a score. */
+  hardness: number | null;
+  springiness: number | null;
+  confidence: 'high' | 'medium' | 'low' | 'insufficient';
+  validDrops: number;
+  totalDrops: number;
+  spreadPct: number | null;
+  medianPeakG: number | null;
+  medianBounceRatio: number | null;
+  measuredHeightCm: number | null;
+  heightSource: 'measured' | 'configured';
+}
+
 export interface TestRecord {
   id: string;
   personId: string;
@@ -179,6 +194,8 @@ export interface TestRecord {
   verdict: Verdict;
   /** Rig index: the stats of the usable reps, shown "for this rig". */
   index?: Record<FeatureName, FeatureStats>;
+  /** Experimental rig scores, for a rig-drop test. */
+  scores?: RigScoreSummary;
 }
 
 export type LiveState =

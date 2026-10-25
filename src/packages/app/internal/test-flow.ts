@@ -10,6 +10,7 @@ import { routinePickerHtml, wireRoutinePicker } from './routines';
 import { createRepRun } from './rep-run';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
+import { scoreRigDrops, scoreSummary, scoresHtml } from './scores';
 import { caveatTexts, confidenceText, hardnessText, indexText, matchText, springinessText } from './wording';
 
 const MAX_SUGGESTIONS = 8;
@@ -246,6 +247,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
       <p data-direction>${springinessText(verdict)}</p>
       <p data-hardness>${hardnessText(verdict)}</p>
       <p data-confidence>Confidence: ${confidenceText(verdict)}</p>
+      ${used.routine === 'rig-drop' ? scoresHtml(scoreRigDrops(record.reps.map((rep) => rep.trace))) : ''}
       ${record.index && used.routine === 'rig-drop' ? `<p data-rig-index>${indexText(record.index)}</p>` : ''}
       ${outcome === 'low-confidence' ? `<p data-low-confidence>You finished with fewer than ${GOAL_REPS} good reps.</p>` : ''}
       <ul data-caveats>${caveats.map((c) => `<li>${c}</li>`).join('')}</ul>
@@ -263,11 +265,12 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
     })();
   };
 
-  const showMeasurement = (index: Record<FeatureName, FeatureStats>, outcome: SessionOutcome) => {
+  const showMeasurement = (index: Record<FeatureName, FeatureStats>, outcome: SessionOutcome, reps: readonly RepResult[]) => {
     result.hidden = false;
     result.innerHTML = `
       <p data-measure-title>Measure only</p>
       <p data-rig-index>${indexText(index)}</p>
+      ${scoresHtml(scoreRigDrops(reps.map((rep) => rep.trace)))}
       <p>No reference, so no verdict. Compare it with another surface at the same rig and drop height.</p>
       ${outcome === 'low-confidence' ? `<p data-low-confidence>You finished with fewer than ${GOAL_REPS} good reps.</p>` : ''}
       <p data-save-status>This measurement is not saved.</p>`;
@@ -304,7 +307,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
       }
       try {
         if (used.measureOnly) {
-          showMeasurement(indexOf(reps), outcome);
+          showMeasurement(indexOf(reps), outcome, reps);
           return;
         }
         showResult(
@@ -319,6 +322,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
             reps,
             verdict: compare(reps, used.ref!),
             index: indexOf(reps),
+            ...(used.routine === 'rig-drop' && { scores: scoreSummary(scoreRigDrops(reps.map((rep) => rep.trace))) }),
           },
           used,
           outcome,

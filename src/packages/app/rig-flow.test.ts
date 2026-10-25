@@ -388,3 +388,38 @@ describe('measure only edges', () => {
     expect(text(root, '[data-caveats]').toLowerCase()).toContain('rig setup differs');
   });
 });
+
+describe('experimental scores', () => {
+  it('shows numerical hardness and springiness scores with the measurement quality when measuring only', async () => {
+    const { root } = mount('#/test', await storeWith(), undefined, padded(rigStream({ bounceRatio: 0.3 })));
+    await flush();
+
+    q<HTMLInputElement>(root, 'input[name="mode"][value="measure"]').click();
+    q<HTMLButtonElement>(root, '[data-action="start-test"]').click();
+    await flush();
+
+    expect(text(root, '[data-hardness-score]')).toMatch(/Hardness score: \d+ \/ 100/);
+    expect(text(root, '[data-springiness-score]')).toMatch(/Springiness score: \d+ \/ 100/);
+    expect(text(root, '[data-score-quality]')).toMatch(/Measurement quality: (high|medium|low) \(\d+ of \d+ drops valid/);
+    expect(text(root, '[data-score-disclaimer]').toLowerCase()).toContain('experimental');
+  });
+
+  it('stores the scores and their supporting measurements on a saved test', async () => {
+    const store = await storeWith();
+    await calibrate(store);
+    const { root } = mount('#/test', store, undefined, padded(rigStream({ bounceRatio: 0.4 })));
+    await flush();
+
+    setValue(root, 'input[name="surface"]', 'Blue couch');
+    q<HTMLButtonElement>(root, '[data-action="start-test"]').click();
+    await flush();
+
+    expect(text(root, '[data-hardness-score]')).toMatch(/Hardness score: \d+ \/ 100/);
+    const [record] = await store.listTests();
+    expect(record?.scores?.hardness).toBeGreaterThanOrEqual(0);
+    expect(record?.scores?.hardness).toBeLessThanOrEqual(100);
+    expect(record?.scores?.validDrops).toBeGreaterThanOrEqual(3);
+    expect(record?.scores?.medianPeakG).toBeGreaterThan(0);
+    expect(['high', 'medium', 'low']).toContain(record?.scores?.confidence);
+  });
+});

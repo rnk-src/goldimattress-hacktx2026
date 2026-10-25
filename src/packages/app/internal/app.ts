@@ -5,6 +5,7 @@ import type { Access } from '../../sensors';
 import { positionCue } from '../../session';
 import { DEFAULT_RIG, assessHover, createPositionTracker, routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
+import { scoreNote, scoreRigDrops, scoresHtml } from './scores';
 import { historyView } from './history';
 import { rigSetupView } from './rig-setup';
 import { testView } from './test-flow';
@@ -158,6 +159,7 @@ function captureView(
           </div>
           <button class="button button--primary" type="button" data-action="start-capture">Start ${REPS}-rep capture</button>
           <div class="export-slot" data-export></div>
+          <div data-scores-slot></div>
         </section>
         <p class="capture-footnote">Keep this page visible until all ${REPS} markers are complete. Audio and on-screen cues occur together.</p>
       </main>
@@ -169,6 +171,7 @@ function captureView(
   const label = root.querySelector<HTMLInputElement>('[name="label"]');
   const surface = root.querySelector<HTMLInputElement>('[name="surface"]');
   const exportSlot = root.querySelector<HTMLElement>('[data-export]');
+  const scoresSlot = root.querySelector<HTMLElement>('[data-scores-slot]');
   const routine = root.querySelector<HTMLSelectElement>('[name="routine"]');
   const rigFields = root.querySelector<HTMLElement>('[data-rig]');
   const rigInput = (name: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)?.value ?? '';
@@ -308,12 +311,15 @@ function captureView(
         });
       }
       if (traces.length > 0) {
+        const report = rigDrop ? scoreRigDrops(traces) : undefined;
         const recording: Recording = {
           version: 1,
           label: label?.value.trim() || 'Raw capture',
           surface: surface?.value.trim() || 'Unnamed surface',
           traces,
+          ...(report && { notes: scoreNote(report) }),
         };
+        if (scoresSlot) scoresSlot.innerHTML = report ? scoresHtml(report) : '';
         const fileName = `goldimattress-recording-${fileNamePart(recording.label, 'raw-capture')}-${fileNamePart(recording.surface, 'unnamed-surface')}.json`;
         if (exportUrl) URL.revokeObjectURL(exportUrl);
         exportUrl = URL.createObjectURL(new Blob([serializeRecording(recording)], { type: 'application/json' }));

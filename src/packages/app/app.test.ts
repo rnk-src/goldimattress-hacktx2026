@@ -286,6 +286,30 @@ describe('startApp', () => {
       return parseRecording(JSON.parse(await exported[0]!.text())).traces;
     }
 
+    it('shows no score, and says why, when the capture holds no valid drop', async () => {
+      vi.useFakeTimers();
+      const root = document.createElement('main');
+      document.body.append(root);
+      window.location.hash = '#/capture';
+      startApp(root, {
+        source: createReplaySource(replayTrace(), { realtime: true }),
+        store: store(),
+        makeCoach: coach,
+        now: () => new Date('2026-10-24T16:00:00.000Z'),
+        device: 'Replay phone',
+        newId: () => 'test-id',
+      });
+      const routine = root.querySelector<HTMLSelectElement>('[name="routine"]')!;
+      routine.value = 'rig-drop';
+      routine.dispatchEvent(new Event('change'));
+      root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+      await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+
+      expect(root.querySelector('[data-hardness-score]')?.textContent).toBe('Hardness score: not available');
+      expect(root.querySelector('[data-springiness-score]')?.textContent).toBe('Springiness score: not available');
+      expect(root.querySelector('[data-score-disclaimer]')?.textContent?.toLowerCase()).toContain('experimental');
+    });
+
     it('records the default rig on each rig-drop trace', async () => {
       const traces = await captureRig(() => {});
       expect(traces).toHaveLength(5);
