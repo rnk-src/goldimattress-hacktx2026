@@ -8,7 +8,7 @@ import type { Store } from '../store';
 import { startApp } from './index';
 
 const spec = routineSpec('sit-drop');
-const WINDOW_MS = (spec.preRollS + spec.captureS) * 1_000;
+const WINDOW_MS = (spec.preRollS + spec.captureS + 1) * 1_000;
 const REST_MS = spec.restS * 1_000;
 
 function coach(): Coach {
