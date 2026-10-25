@@ -213,6 +213,7 @@ describe('createRepSession rig-drop', () => {
     expect(text('drop-when-ready')).toBe('Let go with both hands.');
     expect(positionCue('off').text).toBe('Hold the phone upright against your breastbone, screen facing out.');
     expect(positionCue('off', 'rig-drop').text).toBe('Hold the slab level.');
+    expect(positionCue('ok', 'rig-drop').text).toBe('Slab level. Hold still.');
   });
 
   it('says to hold the slab level when it tilts past 20 degrees', () => {
