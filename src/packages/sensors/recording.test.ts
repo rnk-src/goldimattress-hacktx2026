@@ -103,4 +103,22 @@ describe('parseRecording rig-drop', () => {
     expect(err).toBeInstanceOf(RecordingFormatError);
     expect((err as RecordingFormatError).path).toBe('traces[0].rig.massKg');
   });
+
+  it.each([
+    ['massKg', { ...rig, massKg: 0 }],
+    ['massKg', { ...rig, massKg: -1 }],
+    ['dropHeightCm', { ...rig, dropHeightCm: 0 }],
+    ['baseCm', { ...rig, baseCm: [0, 9] }],
+    ['baseCm', { ...rig, baseCm: [17.5, -9] }],
+  ])('rejects a non-positive %s', (field, bad) => {
+    const err = catchError(() => parseRecording(rigRecording(bad)));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe(`traces[0].rig.${field}`);
+  });
+
+  it('rejects a non-finite massKg', () => {
+    const bad = { ...rig, massKg: Infinity };
+    expect(() => parseRecording(JSON.parse(JSON.stringify(rigRecording(bad))))).toThrow(RecordingFormatError);
+    expect(() => parseRecording(rigRecording(bad))).toThrow(RecordingFormatError);
+  });
 });
