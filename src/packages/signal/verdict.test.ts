@@ -336,4 +336,19 @@ describe('buildReference', () => {
     const reps = five((i) => rep({}, { routine: i === 3 ? 'bridge-drop' : 'sit-drop' }));
     expect(() => buildReference(reps, 'sit-drop')).toThrow(RangeError);
   });
+
+  it('stores the trimmed mean of 5 reps as the centre', () => {
+    const r = buildReference([19, 19.8, 20.4, 20.6, 23].map((peakOverV) => rep({ peakOverV })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+    expect(r.ref.features.peakOverV.median).toBeCloseTo((19.8 + 20.4 + 20.6) / 3);
+  });
+});
+
+describe('compare centre', () => {
+  it('uses the trimmed mean of 5 test reps', () => {
+    const outlier = [19, 19.8, 20.4, 20.6, 30].map((peakOverV) => rep({ peakOverV }));
+    const withTrim = compare(outlier, ref({ peakOverV: 1 }, { ...BASE, peakOverV: 20 }));
+    expect(withTrim.perFeatureZ.peakOverV).toBeCloseTo(((19.8 + 20.4 + 20.6) / 3 - 20) / 1.6, 5);
+  });
 });
