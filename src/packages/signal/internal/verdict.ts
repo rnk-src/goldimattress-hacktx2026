@@ -31,7 +31,7 @@ const straddles = ([lo, hi]: [number, number]) => {
 };
 
 /**
- * Verdict of the weighted median of the usable test reps against the reference.
+ * Verdict of the usable test reps (the summarize centre) against the reference.
  * Hardness is left out of the match until `hardnessReliable` is true.
  * shortcut: hardnessReliable defaults to false because the hardness axis reads wrong across surfaces; flip it after the multi-surface data fixes the axis.
  */

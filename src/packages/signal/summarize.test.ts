@@ -39,4 +39,10 @@ describe('summarize', () => {
     // median 20.4; deviations 1.4 0.6 0 0.2 9.6; MAD 0.6; scaled 0.8896
     expect(s.features.peakOverV.mad).toBeCloseTo(1.4826 * 0.6);
   });
+
+  it('splits a value on the trim cut line by weight', () => {
+    // weights 1 1 2 1 0.5, total 5.5, keep [1.1, 4.4]: 20 x0.9, 30 x2, 40 x0.4
+    const reps = [10, 20, 30, 40, 50].map((v, i) => rep(v, [1, 1, 2, 1, 0.5][i]!));
+    expect(summarize(reps).features.peakOverV.median).toBeCloseTo((18 + 60 + 16) / 3.3);
+  });
 });
