@@ -272,6 +272,15 @@ describe('schema versioning and bad data', () => {
     expect(await store.listTests()).toHaveLength(1);
   });
 
+  it('gives reps saved before weights existed a full weight', async () => {
+    const storage = memoryStorage();
+    const trace = synthRep({ seed: 8 });
+    const old = { ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace };
+    storage.setItem(KEY, JSON.stringify({ people: [], surfaces: [], tests: [{ ...record('t1', 'p1', 's1'), reps: [old] }] }));
+    const [loaded] = await createLocalStore(storage).listTests();
+    expect(loaded!.reps[0]).toMatchObject({ ok: true, weight: 1 });
+  });
+
   const v1 = (parts: object) => JSON.stringify({ version: 1, people: [], surfaces: [], tests: [], ...parts });
   const badRep = (trace: unknown) => ({ ...record('t1', 'p1', 's1'), reps: [{ ok: true, trace }] });
   const meta = { id: 'r', routine: 'sit-drop' };
