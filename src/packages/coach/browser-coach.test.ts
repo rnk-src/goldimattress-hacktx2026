@@ -46,6 +46,21 @@ describe('createBrowserCoach', () => {
     expect(spoken.map((utterance) => utterance.text)).toEqual(['Hold still']);
   });
 
+  it('skips speech for empty or blank text but still plays the beep', () => {
+    const spoken: SpeechSynthesisUtterance[] = [];
+    const speech = {
+      speak: (utterance: SpeechSynthesisUtterance) => spoken.push(utterance),
+    } as unknown as SpeechSynthesis;
+    const audio = createAudioFake();
+    const coach = createBrowserCoach({ audio: () => audio.context, speech });
+
+    coach.play({ key: 'next-rep', text: '', beep: 'ready' });
+    coach.play({ key: 'next-rep', text: '  ', beep: 'ready' });
+
+    expect(spoken).toEqual([]);
+    expect(audio.starts).toHaveLength(2);
+  });
+
   it('schedules the requested beep pattern on the audio clock', () => {
     const audio = createAudioFake();
     const coach = createBrowserCoach({ audio: () => audio.context });
