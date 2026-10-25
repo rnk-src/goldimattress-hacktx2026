@@ -44,7 +44,7 @@ const encodeTrace = (t: Trace): StoredTrace => ({ ...t, samples: encodeSamples(t
 const decodeTrace = (t: StoredTrace): Trace => ({ ...t, samples: decodeSamples(t.samples) });
 
 const encodeRep = (r: RepResult): StoredRep => ({ ...r, trace: encodeTrace(r.trace) });
-// shortcut: reps saved before weights existed read as weight 1, jitter 0 and no issues; dev data only, drop when no old data remains.
+// shortcut: reps saved before weights existed read as weight 1, jitter 0 and no issues, and old issue names such as 'too-fast' are not migrated; dev data only, drop when no old data remains.
 const decodeRep = (r: StoredRep): RepResult =>
   ({ ...(r.ok ? { weight: 1, hoverJitter: 0, issues: [] } : {}), ...r, trace: decodeTrace(r.trace) }) as RepResult;
 
