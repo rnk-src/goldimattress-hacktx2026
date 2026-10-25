@@ -1,5 +1,6 @@
 export { analyzeRep } from './internal/analyze';
 export { assessHover } from './internal/hover';
+export { createPositionTracker } from './internal/position';
 export { routineSpec } from './internal/routine';
 export { compare } from './internal/verdict';
 export { USABLE_WEIGHT, buildReference, isUsable } from './internal/reference';

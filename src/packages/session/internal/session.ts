@@ -1,22 +1,26 @@
 import type { Cue, CueKey, LiveState, ReferenceStats, RepResult, Routine, Sample } from '../../domain';
-import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, isUsable, routineSpec } from '../../signal';
+import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, createPositionTracker, isUsable, routineSpec } from '../../signal';
 import { rejectMessage } from './messages';
 
 export interface SessionOptions {
   routine: Routine;
   ref?: ReferenceStats;
-  /** Accepted reps that end the session. Default 5. */
-  goal?: number;
 }
+
+export type SessionOutcome = 'complete' | 'low-confidence' | 'retry';
 
 export type SessionEvent =
   | { kind: 'state'; state: LiveState }
   | { kind: 'cue'; cue: Cue }
   | { kind: 'rep'; result: RepResult }
-  | { kind: 'done'; reps: RepResult[] };
+  | { kind: 'done'; reps: RepResult[]; outcome: SessionOutcome };
 
 export interface RepSession {
   push(s: Sample): SessionEvent[];
+  /** Finishes early once at least three usable reps have been captured. */
+  finishNow(): SessionEvent[];
+  /** Ends the current rest using the latest sample time. */
+  skipRest(): SessionEvent[];
   abort(): void;
   readonly state: LiveState;
   readonly accepted: number;
@@ -25,12 +29,20 @@ export interface RepSession {
 
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
+const MAX_ATTEMPTS = 10;
+/** Usable reps that finish a session. */
+export const GOAL_REPS = 5;
+/** Usable reps from which the user may finish early, and below which a session is a retry. */
+export const MIN_REPS = 3;
+const LOW_CONFIDENCE_TEXT = 'Session complete with low confidence.';
+// shortcut: duplicates signal's 1 m/s² drop ceiling, export the shared threshold if either package retunes it.
+const SCOREABLE_JITTER = 1;
 
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
   'hold-still': { key: 'hold-still', text: 'Hold still.' },
-  'lean-less': { key: 'lean-less', text: rejectMessage('lean-too-much') },
-  'lean-more': { key: 'lean-more', text: rejectMessage('lean-too-little') },
+  'phone-off': { key: 'phone-off', text: 'Hold the phone upright against your breastbone, screen facing out.' },
+  'phone-ok': { key: 'phone-ok', text: 'Phone position good. Hold still.' },
   'drop-when-ready': { key: 'drop-when-ready', text: 'Relax your legs and drop.', beep: 'ready' },
   captured: { key: 'captured', text: 'Drop detected. Stay still and hold your breath.', beep: 'captured' },
   'rep-accepted': { key: 'rep-accepted', text: 'Good rep.', beep: 'accepted' },
@@ -40,15 +52,21 @@ const CUES: Record<CueKey, Cue> = {
   done: { key: 'done', text: 'All reps done.' },
 };
 
+/** The cue for a phone-position event from `createPositionTracker`. */
+export const positionCue = (event: 'off' | 'ok'): Cue => CUES[event === 'off' ? 'phone-off' : 'phone-ok'];
+
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
-  const goal = opts.goal ?? 5;
   const restText = `Rest for ${spec.restS} seconds. Do not drop yet.`;
   let restEndT = 0;
+  let restStartedT = 0;
   let restWarned = false;
+  let pendingRestSkipped: boolean | undefined;
+  let previousCaptureEndT: number | undefined;
   let aborted = false;
   /** Time of the first evaluation in the current unbroken run of still hovers. */
   let stillSince: number | undefined;
+  const position = createPositionTracker(opts.routine);
   let state: LiveState = 'idle';
   let lastCue: CueKey | undefined;
   let buffer: Sample[] = [];
@@ -69,11 +87,16 @@ export function createRepSession(opts: SessionOptions): RepSession {
     lastCue = key;
     out.push({ kind: 'cue', cue: text === undefined ? CUES[key] : { ...CUES[key], text } });
   };
+  const finish = (out: SessionEvent[], outcome: SessionOutcome, text = CUES.done.text) => {
+    setState('done', out);
+    cue('done', out, text);
+    out.push({ kind: 'done', reps: [...reps], outcome });
+  };
 
   const finishRep = (out: SessionEvent[]) => {
     const t0 = capture[0]!.t;
     const last = capture[capture.length - 1]!;
-    const result = analyzeRep(
+    let result = analyzeRep(
       {
         routine: opts.routine,
         sampleRateHz: (capture.length - 1) / (last.t - t0),
@@ -84,9 +107,15 @@ export function createRepSession(opts: SessionOptions): RepSession {
       },
       opts.ref,
     );
+    if (result.ok && previousCaptureEndT !== undefined && pendingRestSkipped !== undefined) {
+      result = { ...result, restS: t0 - previousCaptureEndT, restSkipped: pendingRestSkipped };
+    }
+    pendingRestSkipped = undefined;
     capture = [];
     buffer = [];
-    restEndT = last.t + spec.restS;
+    restStartedT = last.t;
+    previousCaptureEndT = last.t;
+    restEndT = restStartedT + spec.restS;
     restWarned = false;
     reps.push(result);
     const usable = isUsable(result);
@@ -95,10 +124,13 @@ export function createRepSession(opts: SessionOptions): RepSession {
     out.push({ kind: 'rep', result });
     if (usable) cue('rep-accepted', out);
     else cue('rep-rejected', out, rejectMessage((result.ok ? result.issues : result.reasons)[0]!), true);
-    if (accepted >= goal) {
-      setState('done', out);
-      cue('done', out);
-      out.push({ kind: 'done', reps: [...reps] });
+    if (accepted >= GOAL_REPS) {
+      finish(out, 'complete');
+      return;
+    }
+    if (reps.length >= MAX_ATTEMPTS) {
+      if (accepted >= MIN_REPS) finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
+      else finish(out, 'retry', 'This technique or surface is not working. Try again when you are ready.');
       return;
     }
     setState('resting', out);
@@ -123,6 +155,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       buffer = buffer.filter((w) => s.t - w.t <= spec.preRollS + EPS);
       if (state === 'resting') {
         if (s.t >= restEndT - EPS) {
+          pendingRestSkipped = false;
           setState('positioning', out);
           cue('next-rep', out);
         } else if (!restWarned && Math.hypot(s.ax, s.ay, s.az) - GRAVITY > IMPACT_EXCESS) {
@@ -133,7 +166,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       }
       const recent = buffer.filter((w) => s.t - w.t <= spec.hoverMinS + EPS);
       if (recent[0]!.t > s.t - spec.hoverMinS + EPS) return out;
-      const hover = assessHover(recent, opts.routine, opts.ref);
+      const hover = assessHover(recent, opts.routine, SCOREABLE_JITTER);
       if (!hover.still) {
         stillSince = undefined;
         if (state === 'armed') {
@@ -147,18 +180,33 @@ export function createRepSession(opts: SessionOptions): RepSession {
         cue('hold-still', out);
         return out;
       }
-      const leanFix = hover.reasons.find((r) => r === 'lean-too-much' || r === 'lean-too-little');
-      if (leanFix) {
+      const placed = position.update(hover.leanDeg);
+      if (placed.off) {
         stillSince = undefined;
         setState('holding', out);
-        cue(leanFix === 'lean-too-much' ? 'lean-less' : 'lean-more', out);
+        cue('phone-off', out);
         return out;
       }
+      if (placed.event === 'ok') cue('phone-ok', out);
       // A wobbling hover can pass single windows, so arm only after a sustained run of still ones.
       stillSince ??= s.t;
       if (s.t - stillSince < spec.hoverMinS - EPS) return out;
       setState('armed', out);
       cue('drop-when-ready', out);
+      return out;
+    },
+    finishNow() {
+      const out: SessionEvent[] = [];
+      if (aborted || state === 'done' || state === 'capturing' || accepted < MIN_REPS) return out;
+      finish(out, 'low-confidence', LOW_CONFIDENCE_TEXT);
+      return out;
+    },
+    skipRest() {
+      const out: SessionEvent[] = [];
+      if (aborted || state !== 'resting') return out;
+      pendingRestSkipped = true;
+      setState('positioning', out);
+      cue('next-rep', out);
       return out;
     },
     abort() {

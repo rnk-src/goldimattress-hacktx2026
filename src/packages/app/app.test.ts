@@ -55,6 +55,16 @@ function replayTrace(rateHz = 2, durationS = 130): Trace {
   };
 }
 
+/** A 60 Hz still hover whose lean from the phone's y axis steps from `before` to `after` degrees at `switchS`. */
+function leanTrace(before: number, after: number, switchS: number, durationS = 40): Trace {
+  const samples: Sample[] = Array.from({ length: durationS * 60 + 1 }, (_, index) => {
+    const t = index / 60;
+    const rad = ((t < switchS ? before : after) * Math.PI) / 180;
+    return { t, ax: 0, ay: 9.81 * Math.cos(rad), az: 9.81 * Math.sin(rad) };
+  });
+  return { routine: 'sit-drop', sampleRateHz: 60, device: 'Replay phone', startedAt: '2026-10-24T16:00:00.000Z', samples };
+}
+
 describe('startApp', () => {
   it('requests motion access from a tap and opens capture when granted', async () => {
     let requests = 0;
@@ -243,6 +253,59 @@ describe('startApp', () => {
     // The window keeps a margin beyond preRollS + captureS so a late drop is still recorded.
     const span = recording.traces[0]!.samples.at(-1)!.t - recording.traces[0]!.samples[0]!.t;
     expect(span).toBeGreaterThan(spec.preRollS + spec.captureS);
+  });
+
+  it('rebases each exported trace to seconds since that trace started', async () => {
+    vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:rebased';
+    });
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'Replay phone',
+      newId: () => 'test-id',
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
+
+    expect(recording.traces.map((trace) => trace.samples[0]!.t)).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it('exports a short device model instead of the browser user agent', async () => {
+    vi.useFakeTimers();
+    const exported: Blob[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      exported.push(blob as Blob);
+      return 'blob:device';
+    });
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device:
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
+      newId: () => 'test-id',
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
+    const recording = parseRecording(JSON.parse(await exported[0]!.text()));
+
+    expect(recording.traces.every((trace) => trace.device === 'iPhone')).toBe(true);
   });
 
   it('shows the measured sample rate and event interval', async () => {
@@ -546,6 +609,44 @@ describe('raw capture countdown and timing', () => {
     const start = () => root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
     return { root, countdown, start, cues };
   }
+
+  it('shows the phone angle and asks to hold it upright when it lies flat', async () => {
+    const { root, start, cues } = mountCapture('', '', createReplaySource(leanTrace(70, 70, 0), { realtime: true }));
+    start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    const position = root.querySelector('[data-phone-position]');
+    expect(position?.getAttribute('data-state')).toBe('off');
+    expect(position?.textContent).toContain('70');
+    expect(cues.find((c) => c.key === 'phone-off')?.text).toContain('breastbone');
+  });
+
+  it('confirms an upright phone once', async () => {
+    const { root, start, cues } = mountCapture('', '', createReplaySource(leanTrace(20, 20, 0), { realtime: true }));
+    start();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(root.querySelector('[data-phone-position]')?.getAttribute('data-state')).toBe('ok');
+    expect(cues.filter((c) => c.key === 'phone-ok')).toHaveLength(1);
+    expect(cues.some((c) => c.key === 'phone-off')).toBe(false);
+  });
+
+  it('does not judge the angle while a drop window records, but does again during the rest', async () => {
+    const { start, cues } = mountCapture('', '', createReplaySource(leanTrace(20, 70, 10.5), { realtime: true }));
+    start();
+    await vi.advanceTimersByTimeAsync(READY_MS + 3_000);
+    expect(cues.some((c) => c.key === 'phone-off')).toBe(false);
+    await vi.advanceTimersByTimeAsync(WINDOW_MS);
+    expect(cues.some((c) => c.key === 'phone-off')).toBe(true);
+  });
+
+  it('does not cue the phone angle while the phone is being moved', async () => {
+    const shaky = leanTrace(70, 70, 0);
+    shaky.samples.forEach((s, i) => (s.ay += i % 2 === 0 ? 4 : -4));
+    const { root, start, cues } = mountCapture('', '', createReplaySource(shaky, { realtime: true }));
+    start();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(cues.some((c) => c.key === 'phone-off' || c.key === 'phone-ok')).toBe(false);
+    expect(root.querySelector('[data-phone-position]')?.getAttribute('data-state')).toBe('idle');
+  });
 
   it('counts down the get-ready period before the first window', async () => {
     const { root, countdown, start } = mountCapture();

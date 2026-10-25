@@ -12,24 +12,33 @@ const cues = (events: SessionEvent[]): Cue[] =>
 const keys = (events: SessionEvent[]) => cues(events).map((c) => c.key);
 
 describe('createRepSession hover coaching', () => {
-  it('tells the user to hold still when the hover moves', () => {
+  it('tells the user to hold still when the hover is too violent to score', () => {
     const session = createRepSession({ routine: 'sit-drop' });
-    const events = run(session, synthStream([{ failure: 'moving-hover' }]).slice(0, 90));
+    const events = run(session, synthStream([{ failure: 'moving-hover', failureSize: 2 }]).slice(0, 90));
     expect(keys(events)).toContain('hold-still');
     expect(session.state).toBe('holding');
   });
 
-  it('does not arm on a wobbling hover even when some windows look still', () => {
+  it('does not arm on a violent hover even when some windows look still', () => {
     const session = createRepSession({ routine: 'sit-drop' });
-    const events = run(session, synthStream([{ failure: 'moving-hover' }]).slice(0, 90));
+    const events = run(session, synthStream([{ failure: 'moving-hover', failureSize: 2 }]).slice(0, 90));
     expect(events.filter((e) => e.kind === 'state').map((e) => e.kind === 'state' && e.state)).not.toContain('armed');
     expect(keys(events)).not.toContain('drop-when-ready');
+  });
+
+  it('captures a moderately moving hover and scores it at low weight', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, synthStream([{ failure: 'moving-hover', seed: 1 }, { seed: 1 }], 22));
+    const rep = events.find((event) => event.kind === 'rep');
+
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues[0]).toBe('not-still');
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.weight).toBeLessThan(0.5);
   });
 
   it('arms with a drop cue once the hover is still, then reports capturing at the drop', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{}]).slice(0, 55));
-    expect(keys(events)).toEqual(['place-phone', 'drop-when-ready']);
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready']);
     expect(session.state).toBe('armed');
     const drop = run(session, synthStream([{}]).slice(55, 100));
     expect(drop.filter((e) => e.kind === 'state')).toEqual([{ kind: 'state', state: 'capturing' }]);
@@ -43,7 +52,7 @@ describe('createRepSession reps', () => {
     const reps = events.flatMap((e) => (e.kind === 'rep' ? [e.result] : []));
     expect(reps[0]?.ok).toBe(true);
     expect(session.accepted).toBe(1);
-    expect(keys(events).slice(0, 4)).toEqual(['place-phone', 'drop-when-ready', 'captured', 'rep-accepted']);
+    expect(keys(events).slice(0, 5)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready', 'captured', 'rep-accepted']);
     const span = reps[0]!.trace.samples.at(-1)!.t - reps[0]!.trace.samples[0]!.t;
     expect(span).toBeGreaterThan(4.5);
     expect(span).toBeLessThan(5.5);
@@ -52,7 +61,7 @@ describe('createRepSession reps', () => {
   it('rests after a rep and ignores a drop that arrives during the rest', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{}, {}], 8));
-    expect(keys(events)).toEqual(['place-phone', 'drop-when-ready', 'captured', 'rep-accepted', 'rest', 'rest']);
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready', 'captured', 'rep-accepted', 'rest', 'rest']);
     expect(events.filter((e) => e.kind === 'rep')).toHaveLength(1);
     expect(session.accepted).toBe(1);
     expect(session.state).toBe('resting');
@@ -65,6 +74,35 @@ describe('createRepSession reps', () => {
     expect(events.filter((e) => e.kind === 'rep')).toHaveLength(2);
     expect(keys(events)).toContain('next-rep');
     expect(session.accepted).toBe(2);
+  });
+
+  it('records the default twenty-second rest on the next valid rep', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], 22));
+    const reps = events.flatMap((event) => (event.kind === 'rep' && event.result.ok ? [event.result] : []));
+
+    expect(reps[1]?.restSkipped).toBe(false);
+    expect(reps[1]?.restS).toBeGreaterThanOrEqual(20);
+  });
+
+  it('lets the user skip rest and records the skip on the next valid rep', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events: SessionEvent[] = [];
+    let skipped = false;
+    for (const sample of synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], 8)) {
+      const next = session.push(sample);
+      events.push(...next);
+      if (!skipped && next.some((event) => event.kind === 'rep')) {
+        events.push(...session.skipRest());
+        skipped = true;
+      }
+    }
+    const reps = events.flatMap((event) => (event.kind === 'rep' && event.result.ok ? [event.result] : []));
+
+    expect(reps).toHaveLength(2);
+    expect(reps[1]?.restSkipped).toBe(true);
+    expect(reps[1]?.restS).toBeGreaterThan(0);
+    expect(reps[1]?.restS).toBeLessThan(20);
   });
 
   it('finishes after the goal of five accepted reps and then ignores samples', () => {
@@ -80,11 +118,67 @@ describe('createRepSession reps', () => {
     expect(session.push(stream.at(-1)!)).toEqual([]);
   });
 
-  it('honours a smaller goal', () => {
-    const session = createRepSession({ routine: 'sit-drop', goal: 2 });
-    const events = run(session, synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], 22));
-    expect(events.filter((e) => e.kind === 'rep')).toHaveLength(2);
-    expect(events.at(-1)?.kind).toBe('done');
+  it('does not let a caller lower the automatic goal below five usable reps', () => {
+    const options = { routine: 'sit-drop', goal: 2 } as Parameters<typeof createRepSession>[0];
+    const session = createRepSession(options);
+    const events = run(
+      session,
+      synthStream(Array.from({ length: 6 }, (_, index) => ({ seed: index + 1 })), 22),
+    );
+    expect(events.filter((event) => event.kind === 'rep')).toHaveLength(5);
+    expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'complete' });
+  });
+
+  it('lets the user finish at three usable reps with low confidence', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    let events: SessionEvent[] = [];
+    for (const sample of synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }, { seed: 4 }], 22)) {
+      const next = session.push(sample);
+      if (next.some((event) => event.kind === 'rep') && session.accepted === 3) {
+        events = session.finishNow();
+        break;
+      }
+    }
+
+    expect(session.accepted).toBe(3);
+    expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'low-confidence' });
+    expect(cues(events).at(-1)?.text).toContain('low confidence');
+    expect(session.state).toBe('done');
+  });
+
+  it('does not finish while an attempt is being captured', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const stream = synthStream(Array.from({ length: 5 }, (_, index) => ({ seed: index + 1 })), 22);
+    for (const sample of stream) {
+      session.push(sample);
+      if (session.accepted >= 3 && session.state === 'capturing') break;
+    }
+
+    expect(session.accepted).toBe(3);
+    expect(session.state).toBe('capturing');
+    expect(session.finishNow()).toEqual([]);
+    expect(session.state).toBe('capturing');
+  });
+
+  it('stops after ten attempts with a retry outcome when fewer than three are usable', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const attempts = Array.from({ length: 12 }, () => ({ failure: 'caught-landing' as const, seed: 1 }));
+    const events = run(session, synthStream(attempts, 22));
+
+    expect(events.filter((event) => event.kind === 'rep')).toHaveLength(10);
+    expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'retry' });
+    expect(cues(events).at(-1)?.text).toContain('technique or surface is not working');
+    expect(session.state).toBe('done');
+  });
+
+  it('finishes with low confidence after ten attempts when three are usable', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const usable = [{ seed: 1 }, { seed: 1 }, { seed: 1 }];
+    const lowWeight = Array.from({ length: 9 }, () => ({ failure: 'caught-landing' as const, seed: 1 }));
+    const events = run(session, synthStream([...usable, ...lowWeight], 22));
+
+    expect(events.filter((event) => event.kind === 'rep')).toHaveLength(10);
+    expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'low-confidence' });
   });
 
   it('returns no events after abort', () => {
@@ -120,32 +214,54 @@ describe('createRepSession rejects', () => {
     expect(session.rejected).toBe(1);
     expect(session.accepted).toBe(0);
   });
+});
 
-  it('rejects a drop that is too fast for the reference', () => {
-    const session = createRepSession({ routine: 'sit-drop', ref: REF });
-    const events = run(session, synthStream([{ impactSpeed: 1.0 }, {}], 22));
-    const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('too-fast');
-    expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('too-fast'));
+/** A still hover at a given lean from the phone's y axis (upright on the sternum is 0 degrees), 60 Hz. */
+function hoverAt(leanDeg: number, fromT: number, seconds: number): Sample[] {
+  const rad = (leanDeg * Math.PI) / 180;
+  return Array.from({ length: Math.round(seconds * 60) }, (_, i) => ({
+    t: fromT + i / 60,
+    ax: 0,
+    ay: 9.81 * Math.cos(rad),
+    az: 9.81 * Math.sin(rad),
+  }));
+}
+
+describe('createRepSession phone position cue', () => {
+  it('asks to hold the phone against the breastbone when it lies flat, and does not arm', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, hoverAt(70, 0, 2));
+    expect(keys(events)).toContain('phone-off');
+    expect(cues(events).find((c) => c.key === 'phone-off')?.text).toContain('breastbone');
+    expect(keys(events)).not.toContain('drop-when-ready');
+    expect(session.state).toBe('holding');
+  });
+
+  it('confirms the position once when the phone is upright, then arms', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, hoverAt(30, 0, 2));
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready']);
+  });
+
+  it('confirms again after the phone was off, and only once it is clearly back in range', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, [...hoverAt(60, 0, 1), ...hoverAt(53, 1, 1), ...hoverAt(45, 2, 1)]);
+    expect(keys(events)).toEqual(['place-phone', 'phone-off', 'phone-ok', 'drop-when-ready']);
   });
 });
 
 describe('createRepSession lean coaching', () => {
-  it('asks to lean less or more against the reference lean', () => {
-    const less = createRepSession({ routine: 'sit-drop', ref: REF });
-    expect(keys(run(less, synthStream([{ leanDeg: 25 }]).slice(0, 55)))).toContain('lean-less');
-    expect(less.state).toBe('holding');
-    const more = createRepSession({ routine: 'sit-drop', ref: REF });
-    expect(keys(run(more, synthStream([{ leanDeg: 5 }]).slice(0, 55)))).toContain('lean-more');
+  it('does not ask to match the calibration lean, since another surface invites another lean', () => {
+    const session = createRepSession({ routine: 'sit-drop', ref: REF });
+    const events = run(session, synthStream([{ leanDeg: 35 }]).slice(0, 90));
+    expect(keys(events)).not.toContain('lean-less');
+    expect(keys(events)).not.toContain('lean-more');
+    expect(session.state).not.toBe('holding');
   });
 });
 
 const REASONS: RejectReason[] = [
   'not-still',
-  'lean-too-much',
-  'lean-too-little',
-  'too-fast',
-  'too-slow',
   'caught-landing',
   'left-surface',
   'no-drop-found',
@@ -157,7 +273,5 @@ describe('rejectMessage', () => {
     const messages = REASONS.map(rejectMessage);
     expect(new Set(messages).size).toBe(REASONS.length);
     messages.forEach((m) => expect(m.length).toBeGreaterThan(0));
-    expect(rejectMessage('lean-too-much')).toBe('Lean a bit less.');
-    expect(rejectMessage('lean-too-little')).toBe('Lean a bit more.');
   });
 });

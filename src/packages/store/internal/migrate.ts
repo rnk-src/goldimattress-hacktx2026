@@ -1,5 +1,5 @@
 import type { Person, Surface, TestRecord } from '../../domain';
-import { decodeSamples, encodePerson, encodeTest } from './codec';
+import { decodePerson, decodeTest, encodePerson, encodeTest } from './codec';
 import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
@@ -20,12 +20,11 @@ const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'obj
 /** A stored trace holds one base64 string that decodes to whole samples. */
 function isStoredTrace(x: unknown): boolean {
   if (!isObject(x) || typeof x.samples !== 'string') return false;
-  try {
-    decodeSamples(x.samples);
-    return true;
-  } catch {
-    return false;
-  }
+  const encoded = x.samples;
+  if (encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return false;
+  const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+  const bytes = (encoded.length / 4) * 3 - padding;
+  return bytes % 16 === 0;
 }
 
 const areReps = (x: unknown): boolean =>
@@ -45,7 +44,7 @@ function isValidV1(data: Record<string, unknown>): boolean {
       (p) =>
         isObject(p) &&
         isObject(p.references) &&
-        Object.values(p.references).every((ref) => isObject(ref) && areReps(ref.reps)),
+        Object.values(p.references).every((ref) => isObject(ref) && isObject(ref.stats) && areReps(ref.reps)),
     ) &&
     tests.every((t) => isObject(t) && areReps(t.reps))
   );
@@ -64,22 +63,35 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
 /**
  * Turns whatever is in storage into the current schema. Missing, corrupt or unrecognised data
  * reads as empty, and the next save replaces it.
- * shortcut: corrupt data and a version newer than this build both read as empty and are overwritten
- * by the next save, with no backup. Keep the raw value under a second key if that ever bites.
+ * Corrupt data and a version newer than this build both read as empty. Before the next save replaces
+ * either one, the local store keeps the raw value under its corrupt-backup key.
  */
-export function readStored(raw: string | null): StoredData {
-  if (raw === null) return emptyStored();
+export function readStoredState(raw: string | null): { data: StoredData; corrupt: boolean } {
+  if (raw === null) return { data: emptyStored(), corrupt: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return emptyStored();
+    return { data: emptyStored(), corrupt: true };
   }
   if (typeof parsed !== 'object' || parsed === null || !isLists(parsed as Record<string, unknown>)) {
-    return emptyStored();
+    return { data: emptyStored(), corrupt: true };
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version === undefined) return migrateV0(data as Parameters<typeof migrateV0>[0]);
-  if (data.version === 1) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
-  return emptyStored();
+  if (data.version === undefined) {
+    try {
+      const migrated = migrateV0(data as Parameters<typeof migrateV0>[0]);
+      // Reading it back is what proves the old data has the shape the app needs.
+      migrated.people.forEach(decodePerson);
+      migrated.tests.forEach(decodeTest);
+      return { data: migrated, corrupt: false };
+    } catch {
+      // Old data of the wrong shape (a person without references, a test without reps) is as unreadable as bad JSON.
+      return { data: emptyStored(), corrupt: true };
+    }
+  }
+  if (data.version === 1 && isValidV1(data)) return { data: data as unknown as StoredData, corrupt: false };
+  return { data: emptyStored(), corrupt: true };
 }
+
+export const readStored = (raw: string | null): StoredData => readStoredState(raw).data;
