@@ -1,11 +1,10 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
 import { FEATURES } from './features-table';
 import { weightedMedian } from './math';
+import { relFloorOf } from './routine';
 import { summarize } from './summarize';
 import { isUsable } from './reference';
 
-/** Share of |μ_ref| below which a spread is treated as noise. */
-const REL_FLOOR = 0.08;
 /** A reference of fewer reps than this has an unreliable MAD, so its floors widen. */
 const FULL_REFERENCE_REPS = 5;
 const SMALL_REFERENCE_FLOOR_FACTOR = 1.5;
@@ -48,11 +47,12 @@ export function compare(
   const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
   const summary = summarize(usable);
+  const relFloor = relFloorOf(ref.routine);
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of FEATURES) {
     const { center: mu, mad } = ref.features[name];
-    const sigmaEff = Math.max(mad, floorFactor * Math.max(REL_FLOOR * Math.abs(mu), absFloor));
+    const sigmaEff = Math.max(mad, floorFactor * Math.max(relFloor * Math.abs(mu), absFloor));
     const value = (summary.features[name].center - mu) / sigmaEff;
     z[name] = value;
     if (axis !== null) axes[axis].push(sign * value);
