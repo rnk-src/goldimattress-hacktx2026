@@ -54,7 +54,7 @@ export function assessHover(
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   if (ref) {
-    const off = leanDeg - ref.leanDeg.mean;
+    const off = leanDeg - ref.leanDeg.median;
     const tol = routineSpec(routine).leanTolDeg;
     if (off > tol) reasons.push('lean-too-much');
     else if (off < -tol) reasons.push('lean-too-little');

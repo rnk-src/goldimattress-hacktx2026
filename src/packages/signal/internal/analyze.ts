@@ -195,7 +195,7 @@ function gate(trace: Trace, m: { features: RepFeatures; impactSpeed: number }, r
   const reasons: RejectReason[] = [];
   if (m.features.stopTime > CAUGHT_STOP_S) reasons.push('caught-landing');
   if (ref) {
-    const ratio = m.impactSpeed / ref.impactSpeed.mean;
+    const ratio = m.impactSpeed / ref.impactSpeed.median;
     const { speedTol } = routineSpec(trace.routine);
     if (ratio > 1 + speedTol) reasons.push('too-fast');
     else if (ratio < 1 - speedTol) reasons.push('too-slow');

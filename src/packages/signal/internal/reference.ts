@@ -1,60 +1,75 @@
 import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
 import { FEATURES } from './features-table';
-import { std } from './math';
+import { scaledMad, weightedMedian } from './math';
 
-const MIN_REPS = 5;
-const MAX_SPEED_CV = 0.2;
-const MAX_LEAN_RANGE_DEG = 10;
+/** A rep with at least this weight counts toward a reference and a verdict. */
+export const USABLE_WEIGHT = 0.5;
+const MIN_REPS = 3;
+/** Outliers are only dropped from this many usable reps up. */
+const DROP_FROM_REPS = 5;
+const OUTLIER_MADS = 3;
+/** Same relative floor as the verdict's sigma floor. */
+const REL_FLOOR = 0.08;
 
 type OkRep = Extract<RepResult, { ok: true }>;
-type Result =
-  | { ok: true; ref: ReferenceStats }
-  | { ok: false; reason: 'too-few' | 'speed-spread' | 'lean-spread'; outliers: number[] };
+type Result = { ok: true; ref: ReferenceStats; dropped: number[] } | { ok: false; reason: 'too-few' };
 
-const mean = (xs: readonly number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length;
-const stats = (xs: readonly number[]): FeatureStats => ({ mean: mean(xs), std: std(xs) });
+const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
+  const median = weightedMedian(xs, ws);
+  return { median, mad: scaledMad(xs, ws, median) };
+};
 
-/** Indexes into `reps` of the ok reps, farthest from the mean of `value` first. */
-function worstFirst(reps: readonly RepResult[], value: (r: OkRep) => number): number[] {
-  const oks = reps.flatMap((r, i) => (r.ok ? [{ i, v: value(r) }] : []));
-  const m = mean(oks.map((o) => o.v));
-  return oks.sort((a, b) => Math.abs(b.v - m) - Math.abs(a.v - m)).map((o) => o.i);
+/** How many scaled MADs the rep's farthest feature sits from the median, floored like the verdict. */
+function outlierScore(rep: OkRep, kept: readonly OkRep[]): number {
+  return Math.max(
+    ...FEATURES.map(({ name }) => {
+      const s = stats(
+        kept.map((r) => r.features[name]),
+        kept.map((r) => r.weight),
+      );
+      return Math.abs(rep.features[name] - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), 1e-9);
+    }),
+  );
 }
 
-/** Mean and std per feature over the ok reps, or the reason the reps cannot form a reference. */
+/** Weighted median and scaled MAD per feature over the usable reps, or why there are too few. */
 export function buildReference(reps: readonly RepResult[], routine: Routine): Result {
   const ok = reps.flatMap((r) => (r.ok ? [r] : []));
   if (ok.some((r) => r.trace.routine !== routine)) {
     // The declared failure union has no routine reason, so this throws like compare.
     throw new RangeError(`rep routine does not match ${routine}`);
   }
-  if (ok.length < MIN_REPS) return { ok: false, reason: 'too-few', outliers: [] };
+  let kept = ok.filter((r) => r.weight >= USABLE_WEIGHT);
+  if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
-  const speeds = ok.map((r) => r.impactSpeed);
-  const meanSpeed = mean(speeds);
-  // shortcut: outliers lists every ok rep ordered by distance from the mean, not only the offenders; the caller redoes the first few. Trim when the UI needs a count.
-  // A mean speed of 0 or less (or NaN) is not a usable reference; the negated test also catches NaN.
-  if (!(meanSpeed > 0) || std(speeds) / meanSpeed > MAX_SPEED_CV) {
-    return { ok: false, reason: 'speed-spread', outliers: worstFirst(reps, (r) => r.impactSpeed) };
-  }
-  const leans = ok.map((r) => r.leanDeg);
-  if (Math.max(...leans) - Math.min(...leans) > MAX_LEAN_RANGE_DEG) {
-    return { ok: false, reason: 'lean-spread', outliers: worstFirst(reps, (r) => r.leanDeg) };
+  const dropped: OkRep[] = [];
+  if (kept.length >= DROP_FROM_REPS) {
+    // Farthest first, one at a time, so a dropped rep stops skewing the median that judges the next.
+    while (kept.length > MIN_REPS) {
+      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept) }));
+      const worst = scored.reduce((a, b) => (b.score > a.score ? b : a));
+      if (worst.score <= OUTLIER_MADS) break;
+      dropped.push(worst.r);
+      kept = kept.filter((r) => r !== worst.r);
+    }
   }
 
+  const ws = kept.map((r) => r.weight);
   const features = Object.fromEntries(
-    FEATURES.map(({ name }) => [name, stats(ok.map((r) => r.features[name]))]),
+    FEATURES.map(({ name }) => [name, stats(kept.map((r) => r.features[name]), ws)]),
   ) as ReferenceStats['features'];
   return {
     ok: true,
+    dropped: dropped.map((r) => reps.indexOf(r)).sort((a, b) => a - b),
     ref: {
       routine,
-      repCount: ok.length,
-      // shortcut: createdAt is the last ok rep's trace start, because signal has no clock; the store may overwrite it.
-      createdAt: ok[ok.length - 1]!.trace.startedAt,
+      repCount: kept.length,
+      // shortcut: createdAt is the last kept rep's trace start, because signal has no clock; the store may overwrite it.
+      createdAt: kept[kept.length - 1]!.trace.startedAt,
       features,
-      leanDeg: stats(leans),
-      impactSpeed: stats(speeds),
+      leanDeg: stats(kept.map((r) => r.leanDeg), ws),
+      impactSpeed: stats(kept.map((r) => r.impactSpeed), ws),
+      jitterScale: weightedMedian(kept.map((r) => r.hoverJitter), ws),
     },
   };
 }
