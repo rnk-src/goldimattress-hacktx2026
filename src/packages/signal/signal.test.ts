@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReferenceStats, Routine, Sample } from '../domain';
 import { expectedFeatures, synthRep } from '../testkit';
 import type { SynthOptions } from '../testkit';
-import { analyzeRep, assessHover, routineSpec } from './index';
+import { analyzeRep, assessHover, createPositionTracker, routineSpec } from './index';
 
 /** The still part of a synthetic rep: everything before the drop. */
 function hoverOf(opts: SynthOptions): Sample[] {
@@ -30,7 +30,7 @@ describe('routineSpec', () => {
     expect(spec.preRollS).toBeGreaterThanOrEqual(1);
     expect(spec.hoverMinS).toBeGreaterThanOrEqual(0.3);
     expect(spec.restS).toBe(20);
-    expect(spec.leanTolDeg).toBe(5);
+    expect(spec.maxLeanDeg).toBeGreaterThan(0);
   });
 
   it('gives the bridge drop a longer capture than the sit-drop', () => {
@@ -55,25 +55,6 @@ describe('assessHover', () => {
     const result = assessHover(hoverOf({ failure: 'moving-hover' }), 'sit-drop');
     expect(result.still).toBe(false);
     expect(result.reasons).toEqual(['not-still']);
-  });
-
-  it('rejects a lean 7 degrees above the reference as lean-too-much', () => {
-    const result = assessHover(hoverOf({ leanDeg: 22 }), 'sit-drop', refWithLean('sit-drop', 15));
-    expect(result.reasons).toEqual(['lean-too-much']);
-  });
-
-  it('rejects a lean 7 degrees below the reference as lean-too-little', () => {
-    const result = assessHover(hoverOf({ leanDeg: 8 }), 'sit-drop', refWithLean('sit-drop', 15));
-    expect(result.reasons).toEqual(['lean-too-little']);
-  });
-
-  it('accepts a lean within 5 degrees of the reference', () => {
-    const result = assessHover(hoverOf({ leanDeg: 19 }), 'sit-drop', refWithLean('sit-drop', 15));
-    expect(result.reasons).toEqual([]);
-  });
-
-  it('ignores the lean when there is no reference', () => {
-    expect(assessHover(hoverOf({ leanDeg: 60 }), 'sit-drop').reasons).toEqual([]);
   });
 
   it('gives the same jitter and lean for a phone turned about its torso axis or with flipped axes', () => {
@@ -220,6 +201,45 @@ describe('analyzeRep features against the analytic answers', () => {
   });
 });
 
+describe('createPositionTracker', () => {
+  const max = routineSpec('sit-drop').maxLeanDeg;
+
+  it('confirms the position once when the phone is first upright', () => {
+    const tracker = createPositionTracker('sit-drop');
+    expect(tracker.update(20)).toEqual({ off: false, event: 'ok' });
+    expect(tracker.update(25)).toEqual({ off: false });
+  });
+
+  it('reports off once when the lean passes the limit, and stays quiet while off', () => {
+    const tracker = createPositionTracker('sit-drop');
+    tracker.update(20);
+    expect(tracker.update(max + 5)).toEqual({ off: true, event: 'off' });
+    expect(tracker.update(max + 10)).toEqual({ off: true });
+  });
+
+  it('needs a margin inside the limit before it confirms again', () => {
+    const tracker = createPositionTracker('sit-drop');
+    tracker.update(max + 5);
+    expect(tracker.update(max - 2)).toEqual({ off: true });
+    expect(tracker.update(max - 6)).toEqual({ off: false, event: 'ok' });
+  });
+
+  it('never reports a bridge drop off', () => {
+    expect(createPositionTracker('bridge-drop').update(90).off).toBe(false);
+  });
+});
+
+describe('analyzeRep plausibility', () => {
+  it('drops a rep whose impact speed is below 0.2 m/s as no real drop', () => {
+    const result = analyzeRep(synthRep({ impactSpeed: 0.12, seed: 4 }));
+    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
+  });
+
+  it('still accepts a slow soft-surface drop of 0.3 m/s', () => {
+    expect(analyzeRep(synthRep({ impactSpeed: 0.3, seed: 4 })).ok).toBe(true);
+  });
+});
+
 describe('analyzeRep scoring', () => {
   const ref = (lean = 15) => refWithLean('sit-drop', lean);
   const scored = (trace: Parameters<typeof analyzeRep>[0], r?: ReferenceStats) => {
@@ -235,43 +255,21 @@ describe('analyzeRep scoring', () => {
     expect(rep.issues).toEqual([]);
   });
 
-  it('keeps a rep that leans 7 degrees past the reference, at full weight', () => {
-    const rep = scored(synthRep({ leanDeg: 15, failure: 'tilt', failureSize: 7 }), ref());
-    expect(rep.weight).toBe(1);
-  });
-
   it.each([
-    [35, 15, 'lean-too-much'],
-    [15, 40, 'lean-too-little'],
-  ] as const)('lowers the weight of a %s degree lean against a %s degree reference and names the fix', (lean, refLean, issue) => {
-    const rep = scored(synthRep({ leanDeg: lean }), ref(refLean));
-    expect(rep.weight).toBeLessThan(1);
-    expect(rep.weight).toBeGreaterThan(0);
-    expect(rep.issues).toContain(issue);
-  });
-
-  it('makes a rep 40 degrees off the reference unusable but still valid', () => {
-    const rep = scored(synthRep({ leanDeg: 55 }), ref());
-    expect(rep.weight).toBeLessThan(USABLE);
+    [55, 0.9],
+    [2, 0.9],
+    [15, 0.3],
+    [15, 1.1],
+  ])('keeps full weight at a %s degree lean and %s m/s against a 15 degree, 0.6 m/s reference', (leanDeg, impactSpeed) => {
+    const rep = scored(synthRep({ leanDeg, impactSpeed }), ref());
+    expect(rep.weight).toBe(1);
+    expect(rep.issues).toEqual([]);
   });
 
   it('lowers the weight of a smeared impact and names caught-landing', () => {
     const rep = scored(synthRep({ failure: 'caught-landing' }));
     expect(rep.weight).toBeLessThan(USABLE);
     expect(rep.issues).toContain('caught-landing');
-  });
-
-  it.each([
-    [1.0, 'too-fast'],
-    [0.3, 'too-slow'],
-  ] as const)('lowers the weight at an impact speed of %s m/s against a 0.6 m/s reference (%s)', (impactSpeed, issue) => {
-    const rep = scored(synthRep({ impactSpeed }), ref());
-    expect(rep.weight).toBeLessThan(1);
-    expect(rep.issues).toContain(issue);
-  });
-
-  it.each([0.45, 0.5, 0.66, 0.75])('keeps full weight at %s m/s against a 0.6 m/s reference', (impactSpeed) => {
-    expect(scored(synthRep({ impactSpeed }), ref()).weight).toBe(1);
   });
 
   it('does not judge the impact speed or lean without a reference', () => {
@@ -290,12 +288,6 @@ describe('analyzeRep scoring', () => {
     const still = scored(trace, { ...ref(), jitterScale: 0 });
     expect(Number.isFinite(still.weight)).toBe(true);
     expect(still.weight).toBe(scored(trace, { ...ref(), jitterScale: 0.225 }).weight);
-  });
-
-  it('ignores the impact speed when the reference speed is not positive', () => {
-    const rep = scored(synthRep({ impactSpeed: 1.0 }), { ...ref(), impactSpeed: { median: 0, mad: 0 } });
-    expect(Number.isFinite(rep.weight)).toBe(true);
-    expect(rep.issues).not.toContain('too-fast');
   });
 
   it('judges the hover jitter against the reference person own jitter scale', () => {

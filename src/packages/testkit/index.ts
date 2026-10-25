@@ -1,4 +1,6 @@
 export { expectedFeatures } from './internal/expected';
+export { SLOPPY, createSimPerson, humanAttempt } from './internal/human';
+export type { AttemptKind, HumanProfile, HumanSurface, SimPerson } from './internal/human';
 export { loadFixture } from './internal/fixtures';
 export { memoryStorage } from './internal/storage';
 export { synthReps } from './internal/reps';

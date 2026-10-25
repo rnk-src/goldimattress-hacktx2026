@@ -180,6 +180,12 @@ describe('compare uncertainty', () => {
     expect(small.springiness).toBeCloseTo(full.springiness / 1.5);
   });
 
+  it('leaves the settle time out of the springiness score but still reports its z', () => {
+    const v = compare(fiveOf({ settleTime: 3 }), ref());
+    expect(v.springiness).toBeCloseTo(0);
+    expect(v.perFeatureZ.settleTime).toBeGreaterThan(3);
+  });
+
   it('takes the weighted median of the test reps, not the mean', () => {
     const v = compare([rep({ peakOverV: 20 }), rep({ peakOverV: 20 }), rep({ peakOverV: 40 })], ref());
     expect(v.perFeatureZ.peakOverV).toBeCloseTo(0);
@@ -272,9 +278,44 @@ describe('buildReference', () => {
     expect(r.dropped).toEqual([5]);
   });
 
+  it('drops a rep whose lean differs from the person own other reps', () => {
+    const leans = [10, 10, 11, 10, 45];
+    const r = buildReference(leans.map((leanDeg) => rep({}, { leanDeg })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([4]);
+  });
+
+  it('keeps a rep that leans 16 degrees more than the person usual lean, which is ordinary', () => {
+    const leans = [10, 10, 10, 10, 26];
+    const r = buildReference(leans.map((leanDeg) => rep({}, { leanDeg })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('keeps reps that lean 27 to 44 degrees, as one person did on a chair', () => {
+    const leans = [27, 28, 41, 42, 44];
+    const r = buildReference(leans.map((leanDeg) => rep({}, { leanDeg })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('drops a rep whose impact speed differs from the person own other reps', () => {
+    const speeds = [0.9, 1.0, 0.95, 1.0, 0.3];
+    const r = buildReference(speeds.map((impactSpeed) => rep({}, { impactSpeed })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([4]);
+  });
+
   it('keeps reps of a dead-foam reference whose bounce ratio is near 0', () => {
     const reps = [0, 0, 0.01, 0, 0.02].map((bounceRatio) => rep({ bounceRatio }));
     const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('does not drop a rep for a wild settle time, which is too noisy to judge by', () => {
+    const settles = [1, 1.1, 0.9, 1, 6];
+    const r = buildReference(settles.map((settleTime) => rep({ settleTime })), 'sit-drop');
     if (!r.ok) throw new Error('expected ok');
     expect(r.dropped).toEqual([]);
   });
