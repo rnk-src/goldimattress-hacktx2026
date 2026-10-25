@@ -12,9 +12,20 @@ const DESCENT_DEFICIT = 0.5;
 /**
  * A descent shorter than this is not a drop, s. Real descents lasted 0.22 to 0.33 s (|a| more than 0.5
  * below 1 g); a hover bump has none or a one-sample dip.
- * shortcut: tuned on one 5-rep desk-chair set, re-tune with more surfaces.
+ * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
  */
 const MIN_DESCENT_S = 0.1;
+/**
+ * Samples this close in time (s) to a dip still belong to its descent. One bounce sample before the impact
+ * is 0.017 s at 60 Hz; the couch set had one per rep.
+ * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
+ */
+const DESCENT_GAP_S = 0.05;
+/**
+ * The peak must come this soon after the descent ends, s. Real rises took 0.1 s (chair) to 0.2 s (couch).
+ * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
+ */
+const RISE_WITHIN_S = 0.4;
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
 /** Below this rate the impact is too coarse to measure, Hz. */
@@ -79,34 +90,54 @@ function impactSpeedOf(trace: Trace, mags: readonly number[], descentStart: numb
 
 type Segments = { impact: number; descentStart: number; hoverFrom: number };
 
+type Run = { start: number; end: number };
+
 /**
- * The impact and descent start for the rise at sample `trigger`, or null when no descent of at least
- * MIN_DESCENT_S leads into it. A bump in the hover has no such descent.
+ * Runs of samples more than DESCENT_DEFICIT below 1 g, in time order. Samples closer than DESCENT_GAP_S
+ * join one run, so a single bounce sample does not split a descent.
  */
-function descentInto(trace: Trace, mags: readonly number[], trigger: number) {
-  // A light-damped impact rises slowly, so back up over the rise to the end of the descent.
-  // shortcut: a descent with less than DESCENT_DEFICIT of deficit is not seen, so the rep is rejected as not-still.
-  let impact = trigger;
-  while (impact > 0 && GRAVITY - mags[impact - 1]! <= DESCENT_DEFICIT) impact--;
-  if (impact < 1) return null;
-  let descentStart = impact;
-  while (descentStart > 0 && GRAVITY - mags[descentStart - 1]! > DESCENT_DEFICIT) descentStart--;
-  const lastT = trace.samples[impact - 1]!.t;
-  return lastT - trace.samples[descentStart]!.t >= MIN_DESCENT_S ? { impact, descentStart } : null;
+function dipRuns(samples: readonly Sample[], mags: readonly number[]): Run[] {
+  const runs: Run[] = [];
+  for (let i = 0; i < mags.length; i++) {
+    if (GRAVITY - mags[i]! <= DESCENT_DEFICIT) continue;
+    const last = runs[runs.length - 1];
+    if (last && samples[i]!.t - samples[last.end]!.t <= DESCENT_GAP_S) last.end = i;
+    else runs.push({ start: i, end: i });
+  }
+  return runs;
+}
+
+/**
+ * The strongest impact that follows a descent of at least MIN_DESCENT_S, or null. The impact is the start
+ * of the rise to the peak, and the descent start is the first sample of the dip. A bump in the hover has
+ * no descent before it, and when movement before the drop also makes a dip and a bump, the harder hit wins.
+ */
+function strongestDrop(trace: Trace, mags: readonly number[]) {
+  const { samples } = trace;
+  let best: { impact: number; descentStart: number; peak: number } | null = null;
+  for (const { start, end } of dipRuns(samples, mags)) {
+    if (samples[end]!.t - samples[start]!.t < MIN_DESCENT_S) continue;
+    let peak = -1;
+    for (let i = end + 1; i < mags.length && samples[i]!.t - samples[end]!.t <= RISE_WITHIN_S; i++) {
+      if (peak < 0 || mags[i]! > mags[peak]!) peak = i;
+    }
+    if (peak < 0 || mags[peak]! - GRAVITY <= IMPACT_EXCESS || (best && mags[peak]! <= best.peak)) continue;
+    let impact = peak;
+    while (impact - 1 > end && mags[impact - 1]! > GRAVITY) impact--;
+    best = { impact, descentStart: start, peak: mags[peak]! };
+  }
+  return best;
 }
 
 /** Finds the hover, descent and impact, or says why the trace has none. */
 function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
-  let found: ReturnType<typeof descentInto> = null;
-  for (let i = 0; i < mags.length && found === null; i++) {
-    if (mags[i]! - GRAVITY > IMPACT_EXCESS) found = descentInto(trace, mags, i);
-  }
+  const found = strongestDrop(trace, mags);
   if (found === null) return 'no-drop-found';
   const { impact, descentStart } = found;
-  // Start at the last sample at or before the hover start, so the window covers the full hover time.
+  // Start one sample before the hover start, so the window always covers the full hover time.
   const hoverStartT = trace.samples[descentStart]!.t - routineSpec(trace.routine).hoverMinS + EPS;
   const firstAfter = trace.samples.findIndex((s) => s.t > hoverStartT);
-  const hoverFrom = Math.max(0, firstAfter - 1);
+  const hoverFrom = Math.max(0, firstAfter - 2);
   if (hasGap(trace.samples, hoverFrom, trace.samples[impact]!.t + GAP_WINDOW_AFTER_IMPACT_S)) {
     return 'low-sample-rate';
   }
