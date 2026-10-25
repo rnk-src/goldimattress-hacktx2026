@@ -145,7 +145,7 @@ export function synthRep(opts: SynthOptions = {}): Trace {
   ] as const) {
     if (!(value > 0)) throw new RangeError(`${name} must be positive`);
   }
-  if (impactSpeed > GRAVITY * dropS * (1 + 1e-9)) {
+  if (impactSpeed > GRAVITY * dropS) {
     throw new RangeError('impactSpeed cannot exceed free fall over dropS');
   }
   if (bounceRatio < 0 || bounceRatio >= 1) throw new RangeError('bounceRatio must be in [0, 1)');
