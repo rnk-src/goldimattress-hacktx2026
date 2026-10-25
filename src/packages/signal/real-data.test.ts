@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { RepResult, Trace } from '../domain';
 import { loadFixture } from '../testkit';
-import { analyzeRep, buildReference } from './index';
+import { analyzeRep, assessHover, buildReference } from './index';
+
+/** Hover lean of a trace whether or not analyzeRep accepts it: the window 0.6 to 1.0 s before the |a| peak. */
+function hoverLean(trace: Trace): number {
+  const mag = (s: Trace['samples'][number]) => Math.hypot(s.ax, s.ay, s.az);
+  const peak = trace.samples.reduce((best, s) => (mag(s) > mag(best) ? s : best));
+  const window = trace.samples.filter((s) => s.t >= peak.t - 1.0 && s.t < peak.t - 0.6);
+  return assessHover(window, trace.routine).leanDeg;
+}
+
+/** Index of the rep with the largest hover lean: the badly placed one. The one shared selection. */
+function oddRepOf(traces: readonly Trace[]): number {
+  const leans = traces.map(hoverLean);
+  return leans.indexOf(Math.max(...leans));
+}
 
 /**
  * Two real sets of five sit-drops, iPhone in Firefox: a desk chair (rep 1 done badly on purpose, the
@@ -57,9 +71,10 @@ describe('analyzeRep on the real desk-chair set', () => {
 
   it('flags the badly placed rep first when the five reps form a reference', () => {
     const traces = loadFixture('desk-chair-set1').traces;
+    const odd = oddRepOf(traces);
+    expect(hoverLean(traces[odd]!)).toBeGreaterThan(30);
     const results: RepResult[] = traces.map((t) => analyzeRep(t));
-    const leans = results.map((r) => (r.ok ? r.leanDeg : 0));
-    const odd = leans.indexOf(Math.max(...leans));
+    expect(results.every((r) => r.ok)).toBe(true);
     const reference = buildReference(results, 'sit-drop');
     expect(reference.ok).toBe(false);
     if (!reference.ok) expect(reference.outliers[0]).toBe(odd);
@@ -102,16 +117,21 @@ describe('analyzeRep on the real couch set', () => {
 describe('analyzeRep with gaps in the real sets', () => {
   it('does not reject a rep for a stall that falls long after the impact', () => {
     let checked = 0;
-    for (const set of ['desk-chair-set1', 'couch-set1']) {
-      for (const trace of loadFixture(set).traces) {
+    const goodReps = [
+      ['desk-chair-set1', [1, 2, 3, 4]],
+      ['couch-set1', [1, 2, 4]],
+    ] as const;
+    for (const [set, reps] of goodReps) {
+      const all = loadFixture(set).traces;
+      for (const trace of reps.map((i) => all[i]!)) {
         const { samples } = trace;
         const peak = samples.reduce((best, s, i) => (Math.hypot(s.ax, s.ay, s.az) > Math.hypot(samples[best]!.ax, samples[best]!.ay, samples[best]!.az) ? i : best), 0);
         const stall = samples.findIndex((s, i) => i > 0 && s.t - samples[i - 1]!.t > 0.3);
         if (stall < 0 || samples[stall]!.t - samples[peak]!.t < 2) continue;
         checked++;
-        expect(verdictOf(trace)).not.toContain('low-sample-rate');
+        expect(verdictOf(trace)).toBe('ok');
       }
     }
-    expect(checked).toBeGreaterThan(0);
+    expect(checked).toBeGreaterThanOrEqual(4);
   });
 });

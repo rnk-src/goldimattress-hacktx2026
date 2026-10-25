@@ -336,14 +336,6 @@ describe('analyzeRep segmentation', () => {
     }),
   });
 
-  it('takes the real drop, not an earlier dip and bump, as the impact', () => {
-    const clean = synthRep({ hoverS: 2, durationS: 6 });
-    const moved = withMagnitude(withMagnitude(clean, 0.4, 0.6, 8.5), 0.6, 0.7, 13.5);
-    const result = analyzeRep(moved);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
-  });
-
   it('ignores a spike at the first sample when a real drop follows', () => {
     const trace = synthRep({ noise: 0 });
     const spiked = { ...trace, samples: trace.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) };
@@ -357,8 +349,63 @@ describe('analyzeRep segmentation', () => {
     expect(analyzeRep(bounced).ok).toBe(true);
   });
 
-  it('calls a hover window 10% short of the minimum not-still', () => {
-    const window = hoverOf({}).slice(0, 17);
-    expect(assessHover(window, 'sit-drop').reasons).toEqual(['not-still']);
+  it('accepts an exact hover window and rejects one a sample too short', () => {
+    expect(assessHover(hoverOf({}).slice(0, 18), 'sit-drop').reasons).toEqual([]);
+    expect(assessHover(hoverOf({}).slice(0, 17), 'sit-drop').reasons).toEqual(['not-still']);
+  });
+});
+
+describe('analyzeRep drop selection', () => {
+  const setMagnitude = (trace: ReturnType<typeof synthRep>, mag: (t: number) => number | null) => ({
+    ...trace,
+    samples: trace.samples.map((s) => {
+      const m = mag(s.t);
+      if (m === null) return s;
+      const k = m / Math.hypot(s.ax, s.ay, s.az);
+      return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
+    }),
+  });
+
+  it('measures a hard surface whose rebound dips right after the 2-3 sample peak', () => {
+    const result = analyzeRep(synthRep({ bounceHz: 5, bounceRatio: 0.1, noise: 0.02, durationS: 4 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
+  });
+
+  it('finds no descent in a noisy hover at the jitter limit', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const result = analyzeRep(synthRep({ failure: 'no-drop', noise: 0.45, durationS: 20, seed }));
+      expect(result.ok === false && result.reasons).toContain('no-drop-found');
+    }
+  });
+
+  it('takes the drop that follows a still hover, not wobble with a dip and bump before it', () => {
+    const wobble = (t: number) => (t < 1.2 ? 9.81 + 2.5 * Math.sin(2 * Math.PI * 3 * t) : null);
+    const result = analyzeRep(setMagnitude(synthRep({ hoverS: 2.5, durationS: 6 }), wobble));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
+  });
+
+  it('takes a soft drop whose peak is lower than a bump before it', () => {
+    const bump = (t: number) =>
+      t < 1.2
+        ? 9.81 + 2.5 * Math.sin(2 * Math.PI * 3 * t)
+        : t >= 1.5 && t < 1.6
+          ? 9.81 + 14
+          : t >= 1.35 && t < 1.5
+            ? 6
+            : null;
+    const soft = synthRep({ impactSpeed: 0.3, bounceHz: 1, bounceRatio: 0.3, hoverS: 2.5, durationS: 6 });
+    const result = analyzeRep(setMagnitude(soft, bump));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.3, 1);
+  });
+
+  it('takes the first peak after the descent, not a taller later bounce', () => {
+    const springy = synthRep({ bounceHz: 2, bounceRatio: 0.8, durationS: 5 });
+    const later = (t: number) => (t >= 1.62 && t < 1.65 ? 9.81 + 25 : null);
+    const result = analyzeRep(setMagnitude(springy, later));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
   });
 });
