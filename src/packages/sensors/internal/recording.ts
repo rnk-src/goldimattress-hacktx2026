@@ -61,17 +61,22 @@ function parseSample(value: unknown, path: string): Sample {
 function parseRig(value: unknown, path: string): RigSetup {
   const obj = object(value, path);
   const base = array(obj, 'baseCm', path);
-  if (base.length !== 2 || base.some((n) => typeof n !== 'number' || !Number.isFinite(n))) {
-    throw new RecordingFormatError(`${path}.baseCm`, 'expected two finite numbers');
+  if (base.length !== 2 || base.some((n) => typeof n !== 'number' || !Number.isFinite(n) || n <= 0)) {
+    throw new RecordingFormatError(`${path}.baseCm`, 'expected two positive finite numbers');
   }
   const spot = string(obj, 'spot', path);
   if (spot !== 'center' && spot !== 'seat-middle' && spot !== 'other') {
     throw new RecordingFormatError(`${path}.spot`, `unknown spot '${spot}'`);
   }
+  const positive = (key: 'massKg' | 'dropHeightCm'): number => {
+    const n = number(obj, key, path);
+    if (!Number.isFinite(n) || n <= 0) throw new RecordingFormatError(`${path}.${key}`, 'must be positive');
+    return n;
+  };
   return {
-    massKg: number(obj, 'massKg', path),
+    massKg: positive('massKg'),
     baseCm: [base[0] as number, base[1] as number],
-    dropHeightCm: number(obj, 'dropHeightCm', path),
+    dropHeightCm: positive('dropHeightCm'),
     spot,
   };
 }
