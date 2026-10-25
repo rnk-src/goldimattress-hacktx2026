@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RepResult, Trace } from '../domain';
 import { loadFixture } from '../testkit';
-import { analyzeRep, assessHover, buildReference } from './index';
+import { analyzeRep, assessHover, buildReference, compare } from './index';
 
 /** Hover lean of a trace whether or not analyzeRep accepts it: the window 0.6 to 1.0 s before the |a| peak. */
 function hoverLean(trace: Trace): number {
@@ -135,5 +135,26 @@ describe('analyzeRep with gaps in the real sets', () => {
       }
     }
     expect(checked).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('hardness on the real surfaces', () => {
+  /**
+   * Four real sit-drop sets, softest to firmest by raw peak (m/s² over 1 g, median of the usable reps).
+   * shortcut: PROGRESS.md does not record this ranking, so it is the measured order of the sets. Replace it with the known order once the towel ladder gives one.
+   */
+  const SURFACES = ['couch-set1', 'desk-chair-set1', 'hard-chair-set2', 'mesh-chair-set1'] as const;
+  const repsOf = (set: (typeof SURFACES)[number]) => loadFixture(set).traces.map((t) => analyzeRep(t));
+
+  it('reads the firmer surface as firmer in all 6 pairs, scoring hardness on raw peak', () => {
+    let right = 0;
+    for (let soft = 0; soft < SURFACES.length; soft++) {
+      for (let firm = soft + 1; firm < SURFACES.length; firm++) {
+        const built = buildReference(repsOf(SURFACES[soft]!), 'sit-drop');
+        if (!built.ok) throw new Error(`no reference for ${SURFACES[soft]}`);
+        if (compare(repsOf(SURFACES[firm]!), built.ref).perFeatureZ.peak > 0) right++;
+      }
+    }
+    expect(right).toBe(6);
   });
 });

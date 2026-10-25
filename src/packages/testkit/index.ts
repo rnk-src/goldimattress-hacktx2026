@@ -1,6 +1,8 @@
 export { expectedFeatures } from './internal/expected';
 export { SLOPPY, createSimPerson, humanAttempt } from './internal/human';
 export type { AttemptKind, HumanProfile, HumanSurface, SimPerson } from './internal/human';
+export { RIG_SLOPPY, createSimRigUser, rigAttempt } from './internal/rig-human';
+export type { RigAttemptKind, RigProfile, RigSurface, SimRigUser } from './internal/rig-human';
 export { loadFixture } from './internal/fixtures';
 export { memoryStorage } from './internal/storage';
 export { synthReps } from './internal/reps';

@@ -1,4 +1,15 @@
-export type Routine = 'sit-drop' | 'bridge-drop';
+export type Routine = 'sit-drop' | 'bridge-drop' | 'rig-drop';
+
+/** The weight rig used for a `rig-drop`: a slab with the phone strapped on, released by hand. */
+export interface RigSetup {
+  /** Slab plus phone, kg. */
+  massKg: number;
+  /** Footprint of the slab, cm. */
+  baseCm: [number, number];
+  /** Nominal release height, cm. */
+  dropHeightCm: number;
+  spot: 'center' | 'seat-middle' | 'other';
+}
 export type SurfaceType = 'mattress' | 'couch' | 'chair' | 'cushion' | 'pad';
 
 /** One accelerometer reading. */
@@ -18,6 +29,8 @@ export interface Trace {
   /** ISO 8601 timestamp. */
   startedAt: string;
   samples: Sample[];
+  /** Rig used for a `rig-drop` trace. */
+  rig?: RigSetup;
 }
 
 export interface Recording {
@@ -29,6 +42,8 @@ export interface Recording {
 }
 
 export interface RepFeatures {
+  /** First-lobe maximum of |a| over 1 g, m/s². Higher = firmer. */
+  peak: number;
   /** a_peak / v_impact, 1/s. Higher = firmer. */
   peakOverV: number;
   /** Impact to first return to 1 g, s. Shorter = firmer. */
@@ -45,7 +60,9 @@ export type RejectReason =
   | 'caught-landing'
   | 'left-surface'
   | 'no-drop-found'
-  | 'low-sample-rate';
+  | 'low-sample-rate'
+  | 'flight-mismatch'
+  | 'tilted-landing';
 
 export type RepResult =
   | {
@@ -54,6 +71,8 @@ export type RepResult =
       /** m/s. */
       impactSpeed: number;
       leanDeg: number;
+      /** Measured free-fall time before the impact, s. Rig covariate. */
+      flightS?: number;
       /** Hover RMS jitter before the drop, m/s². */
       hoverJitter: number;
       /** Quality weight, 0..1. A rep is usable at 0.5 or more. */
@@ -87,9 +106,9 @@ export interface RoutineSpec {
 }
 
 export interface FeatureStats {
-  /** Quality-weighted median. */
-  median: number;
-  /** Quality-weighted MAD × 1.4826, comparable to a standard deviation. */
+  /** Quality-weighted centre of a column of usable reps: the trimmed mean from 5 reps, the median below. The same rule for every column. */
+  center: number;
+  /** Quality-weighted MAD about the median × 1.4826, comparable to a standard deviation. */
   mad: number;
 }
 
@@ -101,7 +120,7 @@ export interface ReferenceStats {
   features: Record<FeatureName, FeatureStats>;
   leanDeg: FeatureStats;
   impactSpeed: FeatureStats;
-  /** Median hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
+  /** Centre (same rule as `FeatureStats.center`) of the hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
   jitterScale: number;
 }
 
@@ -135,6 +154,8 @@ export interface Person {
   id: string;
   name: string;
   bodyMassKg?: number;
+  /** The consumer's rig, with any mass override. */
+  rig?: RigSetup;
   references: Partial<Record<Routine, { stats: ReferenceStats; reps: RepResult[] }>>;
 }
 
@@ -156,6 +177,8 @@ export interface TestRecord {
   /** Accepted and rejected reps, with raw traces. */
   reps: RepResult[];
   verdict: Verdict;
+  /** Rig index: the stats of the usable reps, shown "for this rig". */
+  index?: Record<FeatureName, FeatureStats>;
 }
 
 export type LiveState =

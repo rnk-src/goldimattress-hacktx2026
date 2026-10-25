@@ -84,3 +84,53 @@ describe('recording format', () => {
     expect(catchError(() => parseRecording(null))).toBeInstanceOf(RecordingFormatError);
   });
 });
+
+describe('parseRecording rig-drop', () => {
+  const rig = { massKg: 2.1, baseCm: [17.5, 9], dropHeightCm: 5, spot: 'center' } as const;
+  const rigRecording = (r: unknown): unknown => ({
+    ...recording,
+    traces: [{ ...recording.traces[0], routine: 'rig-drop', rig: r }],
+  });
+
+  it('round-trips a rig-drop trace with its rig', () => {
+    const parsed = parseRecording(JSON.parse(serializeRecording(rigRecording(rig) as Recording)));
+    expect(parsed.traces[0]!.routine).toBe('rig-drop');
+    expect(parsed.traces[0]!.rig).toEqual(rig);
+  });
+
+  it('rejects a malformed rig', () => {
+    const err = catchError(() => parseRecording(rigRecording({ ...rig, massKg: 'heavy' })));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe('traces[0].rig.massKg');
+  });
+
+  it.each([
+    ['massKg', { ...rig, massKg: 0 }],
+    ['massKg', { ...rig, massKg: -1 }],
+    ['dropHeightCm', { ...rig, dropHeightCm: 0 }],
+    ['baseCm', { ...rig, baseCm: [0, 9] }],
+    ['baseCm', { ...rig, baseCm: [17.5, -9] }],
+  ])('rejects a non-positive %s', (field, bad) => {
+    const err = catchError(() => parseRecording(rigRecording(bad)));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe(`traces[0].rig.${field}`);
+  });
+
+  it('rejects a non-finite massKg', () => {
+    const bad = { ...rig, massKg: Infinity };
+    expect(() => parseRecording(JSON.parse(JSON.stringify(rigRecording(bad))))).toThrow(RecordingFormatError);
+    expect(() => parseRecording(rigRecording(bad))).toThrow(RecordingFormatError);
+  });
+
+  it('requires a rig on a rig-drop trace', () => {
+    const rec = { ...recording, traces: [{ ...recording.traces[0], routine: 'rig-drop' }] };
+    const err = catchError(() => parseRecording(rec));
+    expect(err).toBeInstanceOf(RecordingFormatError);
+    expect((err as RecordingFormatError).path).toBe('traces[0].rig');
+  });
+
+  it('still allows a rig on another routine', () => {
+    const rec = { ...recording, traces: [{ ...recording.traces[0], rig }] };
+    expect(parseRecording(rec).traces[0]!.rig).toEqual(rig);
+  });
+});

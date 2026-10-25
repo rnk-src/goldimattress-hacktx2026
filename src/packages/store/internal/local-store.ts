@@ -27,10 +27,6 @@ function upsert<T extends { id: string }>(list: T[], item: T): void {
   else list.push(item);
 }
 
-/**
- * Keeps everything in one storage value and rewrites it on each save.
- * shortcut: rewrite-all is fine for ~100 tests, split into per-test keys if saves get slow.
- */
 const isJson = (text: string): boolean => {
   try {
     JSON.parse(text);
@@ -40,6 +36,10 @@ const isJson = (text: string): boolean => {
   }
 };
 
+/**
+ * Keeps everything in one storage value and rewrites it on each save.
+ * shortcut: rewrite-all is fine for ~100 tests, split into per-test keys if saves get slow.
+ */
 export function createLocalStore(storage: StorageLike = localStorage): Store {
   const load = (): StoredData => readStored(storage.getItem(KEY));
   const save = (data: StoredData, corruptBackup?: string) => {
@@ -57,12 +57,12 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
       throw isQuotaError(e) ? new StoreFullError({ cause: e }) : e;
     }
   };
+  // Edits the stored (encoded) form, so saving one record never decodes the traces of the others.
   const change = async (edit: (data: StoredData) => void) => {
     const raw = storage.getItem(KEY);
     const loaded = readStoredState(raw);
-    const data = loaded.data;
-    edit(data);
-    save(data, loaded.corrupt ? raw! : undefined);
+    edit(loaded.data);
+    save(loaded.data, loaded.corrupt ? raw! : undefined);
   };
 
   return {

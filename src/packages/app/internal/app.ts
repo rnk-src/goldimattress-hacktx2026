@@ -1,9 +1,9 @@
 import type { Coach } from '../../coach';
-import type { Recording, Sample, Trace } from '../../domain';
-import { serializeRecording } from '../../sensors';
+import type { Recording, RigSetup, Sample, Trace } from '../../domain';
+import { RecordingFormatError, parseRig, serializeRecording } from '../../sensors';
 import type { Access } from '../../sensors';
 import { positionCue } from '../../session';
-import { assessHover, createPositionTracker, routineSpec } from '../../signal';
+import { DEFAULT_RIG, assessHover, createPositionTracker, routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
 import { testView } from './test-flow';
 import { shortDeviceModel, withRepMetadata } from './metadata';
@@ -145,6 +145,12 @@ function captureView(
           <div class="field-grid">
             <label><span>Recording label</span><input name="label" value="Raw capture" maxlength="80" autocomplete="off"></label>
             <label><span>Surface</span><input name="surface" value="Unnamed surface" maxlength="80" autocomplete="off"></label>
+            <label><span>Routine</span><select name="routine"><option value="sit-drop">Sit-drop</option><option value="rig-drop">Rig drop</option></select></label>
+          </div>
+          <div class="field-grid" data-rig hidden>
+            <label><span>Rig mass with phone, kg</span><input name="massKg" type="number" inputmode="decimal" step="0.1" min="0.1" value="${DEFAULT_RIG.massKg}"></label>
+            <label><span>Drop height, cm</span><input name="dropHeightCm" type="number" inputmode="decimal" step="1" min="1" value="${DEFAULT_RIG.dropHeightCm}"></label>
+            <label><span>Spot</span><select name="spot"><option value="center">Center</option><option value="seat-middle">Seat middle</option><option value="other">Other</option></select></label>
           </div>
           <button class="button button--primary" type="button" data-action="start-capture">Start ${REPS}-rep capture</button>
           <div class="export-slot" data-export></div>
@@ -159,6 +165,19 @@ function captureView(
   const label = root.querySelector<HTMLInputElement>('[name="label"]');
   const surface = root.querySelector<HTMLInputElement>('[name="surface"]');
   const exportSlot = root.querySelector<HTMLElement>('[data-export]');
+  const routine = root.querySelector<HTMLSelectElement>('[name="routine"]');
+  const rigFields = root.querySelector<HTMLElement>('[data-rig]');
+  const rigInput = (name: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)?.value ?? '';
+  /** The rig the form describes, or a message for the user. The file parser validates it. */
+  const readRig = (): { rig: RigSetup } | { error: string } => {
+    try {
+      const form = { massKg: Number(rigInput('massKg')), baseCm: DEFAULT_RIG.baseCm, dropHeightCm: Number(rigInput('dropHeightCm')), spot: rigInput('spot') };
+      return { rig: parseRig(form, 'rig') };
+    } catch (e) {
+      if (e instanceof RecordingFormatError) return { error: e.message };
+      throw e;
+    }
+  };
   const sampleRate = root.querySelector<HTMLElement>('[data-sample-rate]');
   const eventInterval = root.querySelector<HTMLElement>('[data-event-interval]');
   const progress = Array.from(root.querySelectorAll<HTMLElement>('[data-repetition-progress] li'));
@@ -169,6 +188,9 @@ function captureView(
   let muted = false;
   let running = false;
   let exportUrl: string | undefined;
+  routine?.addEventListener('change', () => {
+    if (rigFields) rigFields.hidden = routine.value !== 'rig-drop';
+  });
   sound?.addEventListener('click', () => {
     muted = !muted;
     getCoach().setMuted(muted);
@@ -176,6 +198,14 @@ function captureView(
     sound.textContent = muted ? 'Unmute cues' : 'Mute cues';
   });
   button?.addEventListener('click', () => {
+    // shortcut: a rig-drop uses the sit-drop window and rest lengths; switch to the rig spec when the plate data shows they differ.
+    const rigDrop = routine?.value === 'rig-drop';
+    const read = rigDrop ? readRig() : undefined;
+    if (read && 'error' in read) {
+      if (status) status.textContent = read.error;
+      return;
+    }
+    const rig = read?.rig;
     const traces: Trace[] = [];
     let activeSamples: Sample[] | undefined;
     let startedAt = '';
@@ -185,6 +215,8 @@ function captureView(
     /** The last half second of samples outside a drop window, to read the phone angle from. */
     const recent: Sample[] = [];
     const judgePosition = (sample: Sample) => {
+      // shortcut: no phone angle cue for the rig, which lies flat on the slab; add one if the slab tilts.
+      if (rigDrop) return;
       recent.push(sample);
       while (recent[0]!.t < sample.t - POSITION_WINDOW_S) recent.shift();
       if (recent.length < POSITION_MIN_SAMPLES) return;
@@ -317,13 +349,15 @@ function captureView(
         const first = samples?.[0];
         const last = samples?.at(-1);
         if (samples && first && last && last.t > first.t) {
-          traces.push({
-            routine: 'sit-drop',
+          const trace: Trace = {
+            routine: rigDrop ? 'rig-drop' : 'sit-drop',
             sampleRateHz: (samples.length - 1) / (last.t - first.t),
             device: shortDeviceModel(deps.device),
             startedAt,
             samples: samples.map((sample) => ({ ...sample, t: sample.t - first.t })),
-          });
+          };
+          if (rig) trace.rig = rig;
+          traces.push(trace);
         }
         const item = progress[repetition - 1];
         if (item) {
@@ -345,7 +379,11 @@ function captureView(
       });
     };
 
-    if (status) status.textContent = 'Get ready. Hold the phone flat on your sternum and get into the hover.';
+    if (status) {
+      status.textContent = rigDrop
+        ? 'Get ready. Strap the phone on the slab and hold it flat above the surface.'
+        : 'Get ready. Hold the phone flat on your sternum and get into the hover.';
+    }
     coach.play({ key: 'place-phone', text: 'Get ready. Get into the hover.' });
     phase(READY_S, (n) => `Get ready: first drop window opens in ${n} s`, record, true);
 

@@ -12,7 +12,7 @@ const verdict: Verdict = {
   firmer: false,
   bouncier: false,
   match: 100,
-  perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  perFeatureZ: { peak: 12, peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
   hardnessInterval: [0, 0],
   springinessInterval: [0, 0],
   confidence: 'confident',
@@ -22,7 +22,7 @@ const verdict: Verdict = {
 
 const rep = (): RepResult => ({
   ok: true,
-  features: { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 },
+  features: { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 },
   impactSpeed: 0.6,
   leanDeg: 15,
   hoverJitter: 0.1,
@@ -81,7 +81,7 @@ describe('saved rep metadata', () => {
       listTests: () => Promise.resolve([]),
     };
     const appStore = withRepMetadata(store, 'iPhone', () => new Date('2026-10-24T17:00:00.000Z'));
-    const stats = { median: 1, mad: 0.1 };
+    const stats = { center: 1, mad: 0.1 };
     const person: Person = {
       id: 'p1',
       name: 'Ana',
@@ -91,7 +91,7 @@ describe('saved rep metadata', () => {
             routine: 'sit-drop',
             repCount: 1,
             createdAt: '2026-10-24T17:00:00.000Z',
-            features: { peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
+            features: { peak: stats, peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
             leanDeg: stats,
             impactSpeed: stats,
             jitterScale: 0.1,

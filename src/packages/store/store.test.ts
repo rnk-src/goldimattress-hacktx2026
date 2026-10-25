@@ -13,7 +13,7 @@ const verdict: Verdict = {
   firmer: false,
   bouncier: false,
   match: 100,
-  perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  perFeatureZ: { peak: 0, peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
   hardnessInterval: [0, 0],
   springinessInterval: [0, 0],
   confidence: 'confident',
@@ -118,7 +118,7 @@ describe('tests', () => {
 });
 
 describe('trace encoding', () => {
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
   const accepted = (trace: Trace): RepResult => ({
     ok: true,
     features,
@@ -168,13 +168,13 @@ describe('trace encoding', () => {
   it('returns reference reps stored on a person', async () => {
     const trace = synthRep({ seed: 4 });
     const store = createLocalStore(memoryStorage());
-    const stats = { median: 1, mad: 0.1 };
+    const stats = { center: 1, mad: 0.1 };
     const reference = {
       stats: {
         routine: 'sit-drop' as const,
         repCount: 1,
         createdAt: '2026-10-24T16:00:00.000Z',
-        features: { peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
+        features: { peak: stats, peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
         leanDeg: stats,
         impactSpeed: stats,
         jitterScale: 0.1,
@@ -210,7 +210,7 @@ describe('trace encoding', () => {
 });
 
 describe('capacity', () => {
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
   /** A typical test: 5 accepted reps and 1 rejected, each a 3.5 s trace at 60 Hz. */
   const typicalTest = (i: number): TestRecord => ({
     ...record(`t${i}`, 'p1', 's1'),
@@ -262,15 +262,15 @@ describe('capacity', () => {
 describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
   const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
-  const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
+  const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
-  it('stamps what it writes with schema version 1', async () => {
+  it('stamps what it writes with schema version 2', async () => {
     const storage = memoryStorage();
     await createLocalStore(storage).savePerson(person('p1'));
-    expect(JSON.parse(storage.getItem(KEY)!)).toMatchObject({ version: 1 });
+    expect(JSON.parse(storage.getItem(KEY)!)).toMatchObject({ version: 2 });
   });
 
-  it('migrates unversioned v0 data (raw per-sample traces) and rewrites it as v1', async () => {
+  it('migrates unversioned v0 data (raw per-sample traces) and rewrites it as v2', async () => {
     const trace = synthRep({ seed: 8 });
     const legacy = {
       people: [person('p1', 'Ana')],
@@ -288,27 +288,15 @@ describe('schema versioning and bad data', () => {
 
     await store.savePerson(person('p2'));
     const rewritten = storage.getItem(KEY)!;
-    expect(JSON.parse(rewritten)).toMatchObject({ version: 1 });
+    expect(JSON.parse(rewritten)).toMatchObject({ version: 2 });
     expect(rewritten).not.toContain('"ax"');
     expect(await store.listTests()).toHaveLength(1);
   });
 
-  it('drops a reference saved with the old mean and std shape and keeps the person', async () => {
+  it('reads a v1 blob as empty, so old references are discarded and the person recalibrates', async () => {
     const storage = memoryStorage();
-    const oldStats = { mean: 1, std: 0.1 };
-    const old = {
-      routine: 'sit-drop',
-      repCount: 5,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      features: { peakOverV: oldStats, stopTime: oldStats, bounceRatio: oldStats, settleTime: oldStats },
-      leanDeg: oldStats,
-      impactSpeed: oldStats,
-    };
-    const stored = { ...person('p1', 'Ana'), references: { 'sit-drop': { stats: old, reps: [] } } };
-    storage.setItem(KEY, JSON.stringify({ version: 1, people: [stored], surfaces: [], tests: [] }));
-    const [loaded] = await createLocalStore(storage).listPeople();
-    expect(loaded).toMatchObject({ id: 'p1', name: 'Ana' });
-    expect(Object.keys(loaded!.references)).toEqual([]);
+    storage.setItem(KEY, JSON.stringify({ version: 1, people: [person('p1', 'Ana')], surfaces: [], tests: [] }));
+    expect(await createLocalStore(storage).listPeople()).toEqual([]);
   });
 
   it('gives reps saved before weights existed a full weight and no issues', async () => {
@@ -323,6 +311,27 @@ describe('schema versioning and bad data', () => {
   const v1 = (parts: object) => JSON.stringify({ version: 1, people: [], surfaces: [], tests: [], ...parts });
   const badRep = (trace: unknown) => ({ ...record('t1', 'p1', 's1'), reps: [{ ok: true, trace }] });
   const meta = { id: 'r', routine: 'sit-drop' };
+  const v2 = (parts: object) => JSON.stringify({ version: 2, people: [], surfaces: [], tests: [], ...parts });
+  const stat = { center: 1, mad: 0.1 };
+  const goodStats = { features: { peakOverV: stat }, leanDeg: stat, impactSpeed: stat, jitterScale: 0.1 };
+  const withStats = (stats: unknown) => ({ ...person('p1', 'Ana'), references: { 'sit-drop': { stats, reps: [] } } });
+  it.each([
+    ['stats that are not an object', v2({ people: [withStats('x')] })],
+    ['stats without leanDeg', v2({ people: [withStats({ ...goodStats, leanDeg: undefined })] })],
+    ['stats without features', v2({ people: [withStats({ ...goodStats, features: undefined })] })],
+    ['features in the old mean and std shape', v2({ people: [withStats({ ...goodStats, features: { peakOverV: { mean: 1, std: 1 } } })] })],
+    ['stats in the old mean and std shape', v2({ people: [withStats({ ...goodStats, leanDeg: { mean: 1, std: 1 } })] })],
+    ['a v0 blob with a null person', JSON.stringify({ people: [null], surfaces: [], tests: [] })],
+    ['a v0 blob with a person without references', JSON.stringify({ people: [{ id: 'p' }], surfaces: [], tests: [] })],
+    ['a v0 blob with a test without reps', JSON.stringify({ people: [], surfaces: [], tests: [{ id: 't' }] })],
+  ])('reads %s as empty without throwing', async (_name, stored) => {
+    const storage = memoryStorage();
+    storage.setItem(KEY, stored);
+    const store = createLocalStore(storage);
+    expect(await store.listPeople()).toEqual([]);
+    expect(await store.listTests()).toEqual([]);
+  });
+
   it.each([
     ['broken JSON', '{not json'],
     ['a non-object', '42'],
@@ -356,7 +365,7 @@ describe('schema versioning and bad data', () => {
 
   it('refuses to overwrite readable newer data when its backup does not fit', async () => {
     const memory = memoryStorage();
-    const newer = JSON.stringify({ version: 2, people: [], surfaces: [], tests: [] });
+    const newer = JSON.stringify({ version: 3, people: [], surfaces: [], tests: [] });
     memory.setItem(KEY, newer);
     const storage = {
       ...memory,
@@ -382,9 +391,9 @@ describe('schema versioning and bad data', () => {
       }),
     ],
     [
-      'a v1 reference without stats',
+      'a v2 reference without stats',
       JSON.stringify({
-        version: 1,
+        version: 2,
         people: [{ id: 'x', name: 'A', references: { 'sit-drop': { reps: [] } } }],
         surfaces: [],
         tests: [],

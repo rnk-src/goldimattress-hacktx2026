@@ -10,7 +10,7 @@ const trace = (routine: Routine = 'sit-drop') => ({
   samples: [],
 });
 
-const BASE: RepFeatures = { peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
+const BASE: RepFeatures = { peak: 12, peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 };
 
 function rep(
   f: Partial<RepFeatures> = {},
@@ -32,14 +32,14 @@ function rep(
 /** Reference with chosen per-feature std (default 10% of the mean). */
 function ref(std: Partial<Record<FeatureName, number>> = {}, base: RepFeatures = BASE): ReferenceStats {
   const features = {} as ReferenceStats['features'];
-  for (const k of Object.keys(base) as FeatureName[]) features[k] = { median: base[k], mad: std[k] ?? 0.1 * base[k] };
+  for (const k of Object.keys(base) as FeatureName[]) features[k] = { center: base[k], mad: std[k] ?? 0.1 * base[k] };
   return {
     routine: 'sit-drop',
     repCount: 5,
     createdAt: '2026-01-01T00:00:00.000Z',
     features,
-    leanDeg: { median: 15, mad: 1 },
-    impactSpeed: { median: 0.6, mad: 0.02 },
+    leanDeg: { center: 15, mad: 1 },
+    impactSpeed: { center: 0.6, mad: 0.02 },
     jitterScale: 0.1,
   };
 }
@@ -74,7 +74,7 @@ describe('compare', () => {
     expect(at(3.1).hardnessLabel).toBe('much');
   });
 
-  it('reports firmer for higher peakOverV and bouncier for higher bounceRatio', () => {
+  it('reports firmer for higher peak and bouncier for higher bounceRatio', () => {
     const firm = compare([rep({ peakOverV: 30, stopTime: 0.1 })], ref());
     expect(firm.firmer).toBe(true);
     expect(firm.hardness).toBeGreaterThan(0);
@@ -85,6 +85,21 @@ describe('compare', () => {
     expect(compare([rep({ bounceRatio: 0.1, settleTime: 0.5 })], ref()).bouncier).toBe(false);
   });
 
+  it('scores body hardness on peakOverV and stopTime and records peak without scoring it', () => {
+    const v = compare([rep({ peak: 24 })], ref());
+    expect(v.hardness).toBeCloseTo(0);
+    expect(v.perFeatureZ.peak).toBeGreaterThan(3);
+  });
+
+  it('scores rig hardness on peak alone and records peakOverV and stopTime without scoring them', () => {
+    const rigRef = { ...ref(), routine: 'rig-drop' as const };
+    const v = compare([rep({ peakOverV: 40, stopTime: 0.05 }, { routine: 'rig-drop' })], rigRef);
+    expect(v.hardness).toBeCloseTo(0);
+    expect(v.perFeatureZ.peakOverV).toBeGreaterThan(3);
+    expect(v.perFeatureZ.stopTime).toBeLessThan(-3);
+    expect(compare([rep({ peak: 14.4 }, { routine: 'rig-drop' })], rigRef).hardness).toBeCloseTo(2);
+  });
+
   it('calls a 5% shift just right on a very consistent reference (8% floor)', () => {
     const v = compare([rep({ peakOverV: 21, stopTime: 0.19, bounceRatio: 0.42, settleTime: 1.575 })], ref({
       peakOverV: 0.01, stopTime: 0.0001, bounceRatio: 0.0001, settleTime: 0.0001,
@@ -92,6 +107,14 @@ describe('compare', () => {
     expect(v.hardnessLabel).toBe('just-right');
     expect(v.springinessLabel).toBe('just-right');
     expect(v.perFeatureZ.peakOverV).toBeCloseTo(1 / (0.08 * 20));
+  });
+
+  it('uses a 5% relative floor for a rig-drop reference and keeps 8% for the body', () => {
+    const consistent = ref({ peak: 0.01, stopTime: 0.0001, bounceRatio: 0.0001, settleTime: 0.0001 });
+    const rigRef = { ...consistent, routine: 'rig-drop' as const };
+    const shifted = (routine: Routine) => rep({ peak: 12.6 }, { routine });
+    expect(compare([shifted('rig-drop')], rigRef).perFeatureZ.peak).toBeCloseTo(0.6 / (0.05 * 12));
+    expect(compare([shifted('sit-drop')], consistent).perFeatureZ.peak).toBeCloseTo(0.6 / (0.08 * 12));
   });
 
   it('uses the absolute floor when bounceRatio is near 0', () => {
@@ -234,11 +257,11 @@ describe('buildReference', () => {
     expect(r.ref.routine).toBe('sit-drop');
     expect(r.ref.repCount).toBe(5);
     expect(r.ref.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(r.ref.features.peakOverV.median).toBeCloseTo(20);
+    expect(r.ref.features.peakOverV.center).toBeCloseTo(20);
     expect(r.ref.features.peakOverV.mad).toBeCloseTo(1.4826);
     expect(r.ref.features.stopTime.mad).toBeCloseTo(0);
-    expect(r.ref.leanDeg.median).toBeCloseTo(16);
-    expect(r.ref.impactSpeed.median).toBeCloseTo(0.62);
+    expect(r.ref.leanDeg.center).toBeCloseTo(16);
+    expect(r.ref.impactSpeed.center).toBeCloseTo(0.62);
   });
 
   it('weights the median by rep weight', () => {
@@ -246,8 +269,8 @@ describe('buildReference', () => {
     const even = buildReference(reps, 'sit-drop');
     const heavy = buildReference([reps[0]!, reps[1]!, { ...(reps[2] as object), weight: 3 } as RepResult], 'sit-drop');
     if (!even.ok || !heavy.ok) throw new Error('expected ok');
-    expect(even.ref.features.peakOverV.median).toBeCloseTo(20);
-    expect(heavy.ref.features.peakOverV.median).toBeCloseTo(30);
+    expect(even.ref.features.peakOverV.center).toBeCloseTo(20);
+    expect(heavy.ref.features.peakOverV.center).toBeCloseTo(30);
   });
 
   it('drops a far outlier by itself when 5 or more reps are usable', () => {
@@ -255,7 +278,7 @@ describe('buildReference', () => {
     if (!r.ok) throw new Error('expected ok');
     expect(r.dropped).toEqual([4]);
     expect(r.ref.repCount).toBe(4);
-    expect(r.ref.features.peakOverV.median).toBeCloseTo(20.05);
+    expect(r.ref.features.peakOverV.center).toBeCloseTo(20.05);
   });
 
   it('keeps every rep when fewer than 5 are usable', () => {
@@ -327,6 +350,13 @@ describe('buildReference', () => {
     expect(r.ref.jitterScale).toBeCloseTo(0.2);
   });
 
+  it('stores the summarize centre of hover jitter as the jitter scale from 5 reps', () => {
+    const reps = [0.1, 0.1, 0.2, 0.4, 0.9].map((hoverJitter) => rep({}, { hoverJitter }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.ref.jitterScale).toBeCloseTo((0.1 + 0.2 + 0.4) / 3);
+  });
+
   it('accepts a wide spread of impact speed and lean without failing', () => {
     const r = buildReference(five((i) => rep({}, { impactSpeed: 0.4 + 0.2 * i, leanDeg: 5 + 6 * i })), 'sit-drop');
     expect(r.ok).toBe(true);
@@ -335,5 +365,30 @@ describe('buildReference', () => {
   it('throws RangeError when a rep routine differs from the routine argument', () => {
     const reps = five((i) => rep({}, { routine: i === 3 ? 'bridge-drop' : 'sit-drop' }));
     expect(() => buildReference(reps, 'sit-drop')).toThrow(RangeError);
+  });
+
+  it('stores the trimmed mean of 5 reps as the centre', () => {
+    const r = buildReference([19, 19.8, 20.4, 20.6, 23].map((peakOverV) => rep({ peakOverV })), 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+    expect(r.ref.features.peakOverV.center).toBeCloseTo((19.8 + 20.4 + 20.6) / 3);
+  });
+});
+
+describe('compare centre', () => {
+  it('uses the trimmed mean of 5 test reps', () => {
+    const outlier = [19, 19.8, 20.4, 20.6, 30].map((peakOverV) => rep({ peakOverV }));
+    const withTrim = compare(outlier, ref({ peakOverV: 1 }, { ...BASE, peakOverV: 20 }));
+    expect(withTrim.perFeatureZ.peakOverV).toBeCloseTo(((19.8 + 20.4 + 20.6) / 3 - 20) / 1.6, 5);
+  });
+});
+
+describe('5-rep reference against a short test', () => {
+  // shortcut: the reference uses the trimmed mean at 5 reps and the test uses the median at 3 to 4; only finiteness is checked.
+  it.each([3, 4])('gives a finite verdict for %i test reps', (n) => {
+    const r = buildReference([19, 19.8, 20, 20.4, 21].map((v) => rep({ peakOverV: v })), 'sit-drop');
+    if (!r.ok) throw new Error('reference should build');
+    const v = compare(Array.from({ length: n }, (_, i) => rep({ peakOverV: 20 + i })), r.ref);
+    for (const x of [...Object.values(v.perFeatureZ), v.hardness, v.springiness, v.match]) expect(Number.isFinite(x)).toBe(true);
   });
 });
