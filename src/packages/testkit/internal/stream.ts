@@ -15,7 +15,8 @@ export function synthStream(reps: readonly SynthOptions[], restS = 20): Sample[]
       const seed = (rep.seed ?? DEFAULTS.seed) + 1000;
       // 'tilt' is a lean change, so bake it into leanDeg to keep the pose through the rest.
       const tilt = rep.failure === 'tilt' ? (rep.failureSize ?? 10) : 0;
-      const leanDeg = (rep.leanDeg ?? DEFAULTS.leanDeg) + tilt;
+      // A rig rep lies flat (lean 0) unless told otherwise.
+      const leanDeg = (rep.leanDeg ?? (rep.routine === 'rig-drop' ? 0 : DEFAULTS.leanDeg)) + tilt;
       pieces.push(synthRep({ ...rep, leanDeg, failure: 'no-drop', durationS: restS, seed }).samples);
     }
     for (const piece of pieces) {
