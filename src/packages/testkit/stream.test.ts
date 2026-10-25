@@ -38,4 +38,11 @@ describe('synthStream', () => {
     expect(lean(stream[209]!)).toBeCloseTo(25, 4);
     expect(lean(stream[210]!)).toBeCloseTo(25, 4);
   });
+
+  it('keeps a rig rep flat through its rest, so the slab does not seem to tilt', () => {
+    const stream = synthStream([{ routine: 'rig-drop', dropHeightCm: 5, noise: 0 }, { routine: 'rig-drop', dropHeightCm: 5 }], 2);
+    const angleFromZ = (s: Sample) => (Math.acos(s.az / mag(s)) * 180) / Math.PI;
+    expect(angleFromZ(stream[209]!)).toBeCloseTo(0, 4);
+    expect(angleFromZ(stream[212]!)).toBeCloseTo(0, 4);
+  });
 });
