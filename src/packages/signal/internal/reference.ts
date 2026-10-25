@@ -1,5 +1,6 @@
 import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
 import { FEATURES } from './features-table';
+import { summarize } from './summarize';
 import { scaledMad, weightedMedian } from './math';
 
 /** A rep with at least this weight counts toward a reference and a verdict. */
@@ -42,7 +43,7 @@ function outlierScore(rep: OkRep, kept: readonly OkRep[]): number {
   );
 }
 
-/** Weighted median and scaled MAD per feature over the usable reps, or why there are too few. */
+/** `summarize` of the usable reps after the outlier rule, plus reference metadata, or why there are too few. */
 export function buildReference(reps: readonly RepResult[], routine: Routine): Result {
   const ok = reps.flatMap((r) => (r.ok ? [r] : []));
   if (ok.some((r) => r.trace.routine !== routine)) {
@@ -65,9 +66,6 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   }
 
   const ws = kept.map((r) => r.weight);
-  const features = Object.fromEntries(
-    FEATURES.map(({ name }) => [name, stats(kept.map((r) => r.features[name]), ws)]),
-  ) as ReferenceStats['features'];
   return {
     ok: true,
     dropped: dropped.map((r) => reps.indexOf(r)).sort((a, b) => a - b),
@@ -76,7 +74,7 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
       repCount: kept.length,
       // shortcut: createdAt is the last kept rep's trace start, because signal has no clock; the store may overwrite it.
       createdAt: kept[kept.length - 1]!.trace.startedAt,
-      features,
+      features: summarize(kept).features,
       leanDeg: stats(kept.map((r) => r.leanDeg), ws),
       impactSpeed: stats(kept.map((r) => r.impactSpeed), ws),
       jitterScale: weightedMedian(kept.map((r) => r.hoverJitter), ws),
