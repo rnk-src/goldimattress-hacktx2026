@@ -114,6 +114,8 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   let inputs: RunInputs | undefined;
 
   const routine = () => routineSelect.value as Routine;
+  /** The routine picked before Measure only forced the rig, so Compare can give it back. */
+  let routineBeforeMeasure: string | undefined;
   const measureOnly = () => modeRadios.some((r) => r.checked && r.value === 'measure');
   const reference = () => person?.references[routine()];
 
@@ -126,7 +128,13 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   const refresh = () => {
     const measure = measureOnly();
     // Measure only reads the rig index, which only the rig has.
-    if (measure) routineSelect.value = 'rig-drop';
+    if (measure) {
+      routineBeforeMeasure ??= routineSelect.value;
+      routineSelect.value = 'rig-drop';
+    } else if (routineBeforeMeasure !== undefined) {
+      routineSelect.value = routineBeforeMeasure;
+      routineBeforeMeasure = undefined;
+    }
     routineSelect.disabled = running || measure;
     legacyToggle.disabled = running || measure;
     surfaceLabel.textContent = measure ? 'Surface name (optional)' : 'Surface name';

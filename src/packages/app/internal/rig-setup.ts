@@ -4,7 +4,10 @@ import { personRig, rigSummary } from './rig';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 
+const MIN_DROP_CM = 1;
 const MAX_DROP_CM = 10;
+/** A sanity cap: a slab plus phone above this is a typo, not a rig. */
+const MAX_MASS_KG = 20;
 const DECIMAL = /^\d+([.,]\d+)?$/;
 
 /** Plain digits with an optional . or , decimal; anything else is not a number. */
@@ -14,13 +17,13 @@ const toNumber = (text: string): number | undefined => (DECIMAL.test(text) ? Num
 function readForm(form: { dropHeightCm: string; spot: string; massKg: string }): { rig: RigSetup } | { error: string } {
   const base = personRig();
   const height = toNumber(form.dropHeightCm.trim());
-  if (height === undefined || height <= 0 || height > MAX_DROP_CM) {
-    return { error: `Enter the spacer height in cm, from 1 to ${MAX_DROP_CM}. Never drop from higher.` };
+  if (height === undefined || height < MIN_DROP_CM || height > MAX_DROP_CM) {
+    return { error: `Enter the spacer height in cm, from ${MIN_DROP_CM} to ${MAX_DROP_CM}. Never drop from higher.` };
   }
   const massText = form.massKg.trim();
   const mass = massText === '' ? base.massKg : toNumber(massText);
-  if (mass === undefined || mass <= 0) {
-    return { error: 'Enter the mass in kg, for example 2.1, or leave it blank for the standard rig.' };
+  if (mass === undefined || mass <= 0 || mass > MAX_MASS_KG) {
+    return { error: `Enter the mass in kg, up to ${MAX_MASS_KG}, for example 2.1, or leave it blank for the standard rig.` };
   }
   try {
     return { rig: parseRig({ massKg: mass, baseCm: base.baseCm, dropHeightCm: height, spot: form.spot }, 'rig') };

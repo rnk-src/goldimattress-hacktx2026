@@ -293,3 +293,98 @@ describe('measure only', () => {
     expect(await store.listTests()).toEqual([]);
   });
 });
+
+describe('rig setup edges', () => {
+  it('accepts a 10 cm spacer and a comma decimal mass', async () => {
+    const store = await storeWith();
+    const { root } = mount('#/rig', store);
+    await flush();
+
+    setValue(root, 'input[name="dropHeightCm"]', '10');
+    setValue(root, 'input[name="massKg"]', '2,6');
+    q<HTMLFormElement>(root, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+
+    const [person] = await store.listPeople();
+    expect(person?.rig).toMatchObject({ dropHeightCm: 10, massKg: 2.6 });
+  });
+
+  it.each([
+    ['a spacer of 10.5 cm', 'dropHeightCm', '10.5'],
+    ['a spacer under 1 cm', 'dropHeightCm', '0.5'],
+    ['a mass over 20 kg', 'massKg', '25'],
+  ])('rejects %s', async (_name, field, value) => {
+    const store = await storeWith();
+    const { root } = mount('#/rig', store);
+    await flush();
+
+    setValue(root, `input[name="${field}"]`, value);
+    q<HTMLFormElement>(root, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+
+    expect((await store.listPeople())[0]?.rig).toBeUndefined();
+  });
+
+  it('goes back to the standard mass when the override is cleared, and keeps the references', async () => {
+    const store = await storeWith({ rig: { ...DEFAULT_RIG, baseCm: [17.5, 9], massKg: 3 } });
+    await calibrate(store);
+    const { root } = mount('#/rig', store);
+    await flush();
+    expect(q<HTMLInputElement>(root, 'input[name="massKg"]').value).toBe('3');
+
+    setValue(root, 'input[name="massKg"]', '');
+    q<HTMLFormElement>(root, 'form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flush();
+
+    const [person] = await store.listPeople();
+    expect(person?.rig?.massKg).toBe(DEFAULT_RIG.massKg);
+    expect(person?.references['rig-drop']).toBeDefined();
+  });
+});
+
+describe('measure only edges', () => {
+  it('measures with the rig even when a legacy body routine was selected, and gives the choice back', async () => {
+    const { root } = mount('#/test', await storeWith(), undefined, padded(rigStream()));
+    await flush();
+    const legacy = q<HTMLInputElement>(root, 'input[name="legacy"]');
+    legacy.checked = true;
+    legacy.dispatchEvent(new Event('change'));
+    setValue(root, 'select[name="routine"]', 'sit-drop');
+    const routine = q<HTMLSelectElement>(root, 'select[name="routine"]');
+
+    q<HTMLInputElement>(root, 'input[name="mode"][value="measure"]').click();
+    expect(routine.value).toBe('rig-drop');
+    expect(routine.disabled).toBe(true);
+    q<HTMLInputElement>(root, 'input[name="mode"][value="compare"]').click();
+
+    expect(routine.value).toBe('sit-drop');
+    expect(routine.disabled).toBe(false);
+  });
+
+  it('works with no profile at all, using the standard rig', async () => {
+    const empty = createLocalStore(memoryStorage());
+    const { root } = mount('#/test', empty, undefined, padded(rigStream()));
+    await flush();
+
+    q<HTMLInputElement>(root, 'input[name="mode"][value="measure"]').click();
+    q<HTMLButtonElement>(root, '[data-action="start-test"]').click();
+    await flush();
+
+    expect(text(root, '[data-rig-index]')).toContain('for this rig');
+  });
+
+  it('keeps the no-rig-caveat test honest: a different rig does add one', async () => {
+    const store = await storeWith();
+    await calibrate(store);
+    const [person] = await store.listPeople();
+    await store.savePerson({ ...person!, rig: { ...DEFAULT_RIG, baseCm: [17.5, 9], massKg: 2.4 } });
+    const { root } = mount('#/test', store, undefined, padded(rigStream()));
+    await flush();
+
+    setValue(root, 'input[name="surface"]', 'Blue couch');
+    q<HTMLButtonElement>(root, '[data-action="start-test"]').click();
+    await flush();
+
+    expect(text(root, '[data-caveats]').toLowerCase()).toContain('rig setup differs');
+  });
+});
