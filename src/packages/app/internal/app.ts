@@ -280,8 +280,11 @@ const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/profile'];
 function profileView(root: HTMLElement, deps: AppDeps): () => void {
   root.innerHTML = `<div class="app-shell">${brandHeader('Profiles')}<main class="app-main profile-view"><h1>Profiles</h1></main></div>`;
   const main = root.querySelector<HTMLElement>('main')!;
-  const mounted = mountProfileScreen(main, deps);
-  return () => void mounted.then((unmount) => unmount());
+  const mounted = mountProfileScreen(main, deps).catch(() => {
+    main.insertAdjacentHTML('beforeend', '<p role="alert">Could not load the saved profiles.</p>');
+    return undefined;
+  });
+  return () => void mounted.then((unmount) => unmount?.());
 }
 
 export function startApp(root: HTMLElement, deps: AppDeps): () => void {

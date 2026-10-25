@@ -163,4 +163,28 @@ describe('routes', () => {
     expect(root.querySelector('ul[aria-label="Profiles"]')?.textContent).toContain('Rounak');
     expect(root.querySelector('a[href="#/permission"]')).not.toBeNull();
   });
+
+  it('does not leak a rejection when the profile list cannot load, even after leaving', async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => void unhandled.push(reason);
+    process.on('unhandledRejection', record);
+    const base = createLocalStore(memoryStorage());
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/profile';
+    startApp(root, {
+      source: createReplaySource(traceOf([])),
+      store: { ...base, listPeople: () => Promise.reject(new Error('storage unavailable')) },
+      makeCoach: () => ({ play() {}, keepAwake: () => Promise.resolve(), setMuted() {}, dispose() {} }),
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'Replay phone',
+      newId: () => 'test-id',
+    });
+    await flush();
+    window.location.hash = '#/permission';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    process.off('unhandledRejection', record);
+    expect(unhandled).toEqual([]);
+  });
 });
