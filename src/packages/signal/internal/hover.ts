@@ -24,7 +24,7 @@ export const DROP_JITTER = 1.0;
 const COVERAGE_TOL_S = 0.002;
 
 /** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
-const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
+const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az', 'rig-drop': 'az' };
 
 /** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign. */
 function leanOf(window: readonly Sample[], routine: Routine): number {
