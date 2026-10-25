@@ -87,8 +87,6 @@ export interface RoutineSpec {
   captureS: number;
   restS: number;
   leanTolDeg: number;
-  /** Fractional tolerance on impact speed, e.g. 0.2. */
-  speedTol: number;
 }
 
 export interface FeatureStats {
