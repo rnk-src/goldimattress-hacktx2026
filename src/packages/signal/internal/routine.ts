@@ -1,14 +1,9 @@
-import type { RigSetup, Routine, RoutineSpec } from '../../domain';
+import type { Routine, RoutineSpec } from '../../domain';
+import { body } from './body-drop';
+import type { DropModel } from './drop-model';
+import { freeFall } from './free-fall';
 
 const BASE = { hoverMinS: 0.3, preRollS: 1.0, restS: 20 };
-
-/** The rig as built: a 1.9 kg slab plus a 0.2 kg phone, released from 5 cm. */
-export const DEFAULT_RIG: Readonly<RigSetup> = Object.freeze({
-  massKg: 2.1,
-  baseCm: [17.5, 9] as [number, number],
-  dropHeightCm: 5,
-  spot: 'center',
-});
 
 /** Which drop model analyzes a routine. Private to signal: the public `RoutineSpec` does not expose it. */
 export type DropModelName = 'body' | 'free-fall';
@@ -40,3 +35,5 @@ export function dropModelOf(routine: Routine): DropModelName {
 export function relFloorOf(routine: Routine): number {
   return routine === 'rig-drop' ? 0.05 : 0.08;
 }
+
+export const DROP_MODELS: Record<DropModelName, DropModel> = { body, 'free-fall': freeFall };
