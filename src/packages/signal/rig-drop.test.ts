@@ -71,5 +71,4 @@ describe('analyzeRep on a rig-drop', () => {
     const r = usable(analyzeRep(rig({ dropHeightCm: 10, failure: 'moving-hover' })));
     expect(r.issues).toContain('not-still');
   });
-
 });
