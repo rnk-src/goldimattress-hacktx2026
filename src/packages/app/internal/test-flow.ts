@@ -15,10 +15,15 @@ const SURFACE_TYPES: SurfaceType[] = ['mattress', 'couch', 'chair', 'cushion', '
 /** Collapses runs of spaces so "Blue  couch" and "Blue couch" are one surface. */
 const normalizeName = (name: string): string => name.trim().replace(/\s+/g, ' ');
 
-/** The surface already saved under this name (case-insensitive), or a new one. */
-async function surfaceNamed(deps: AppDeps, name: string, type: SurfaceType): Promise<Surface> {
+/** The saved surface with this name, ignoring case and repeated spaces. */
+async function knownSurface(deps: AppDeps, name: string): Promise<Surface | undefined> {
   const key = name.toLowerCase();
-  const existing = (await deps.store.findSurfaces(name)).find((s) => normalizeName(s.name).toLowerCase() === key);
+  return (await deps.store.findSurfaces(name)).find((s) => normalizeName(s.name).toLowerCase() === key);
+}
+
+/** The surface already saved under this name, or a new one. */
+async function surfaceNamed(deps: AppDeps, name: string, type: SurfaceType): Promise<Surface> {
+  const existing = await knownSurface(deps, name);
   if (existing) {
     if (existing.type === type) return existing;
     const retyped = { ...existing, type };
@@ -142,6 +147,13 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   });
   surfaceInput.addEventListener('input', () => {
     formError.textContent = '';
+    const name = normalizeName(surfaceInput.value);
+    // Show the type a known surface already has, so retesting it does not retype it by accident.
+    void knownSurface(deps, name)
+      .then((known) => {
+        if (mounted && !running && known && normalizeName(surfaceInput.value) === name) typeSelect.value = known.type;
+      })
+      .catch(() => undefined);
   });
   refresh();
 

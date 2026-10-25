@@ -374,6 +374,14 @@ describe('schema versioning and bad data', () => {
   it.each([
     ['a v0 person without references', JSON.stringify({ people: [{ id: 'x' }], surfaces: [], tests: [] })],
     [
+      'a v0 reference without stats',
+      JSON.stringify({
+        people: [{ id: 'x', name: 'A', references: { 'sit-drop': { reps: [] } } }],
+        surfaces: [],
+        tests: [],
+      }),
+    ],
+    [
       'a v1 reference without stats',
       JSON.stringify({
         version: 1,

@@ -144,7 +144,13 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     try {
       const fresh = (await deps.store.listPeople()).find((person) => person.id === personId);
       if (!fresh) throw new Error('profile missing');
-      await deps.store.savePerson({ ...fresh, references: { ...fresh.references, [currentRoutine]: reference } });
+      const saved = { ...fresh, references: { ...fresh.references, [currentRoutine]: reference } };
+      await deps.store.savePerson(saved);
+      if (mounted) {
+        profiles = profiles.map((p) => (p.id === saved.id ? saved : p));
+        if (selectedPerson?.id === saved.id) selectedPerson = saved;
+        showExisting();
+      }
     } catch (error) {
       message = `Could not save: ${error instanceof Error ? error.message : 'unknown error'}. Calibration not stored.`;
     }

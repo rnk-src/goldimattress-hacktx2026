@@ -303,6 +303,22 @@ describe('test screen', () => {
     expect(second.root.querySelector<HTMLElement>('[data-result]')?.hidden).toBe(true);
   });
 
+  it('pre-fills the type of a known surface as soon as its name is typed', async () => {
+    const store = await storeWith(withReference());
+    const first = mount(stream([]), store);
+    await runTest(first.root, 'Blue couch', 'couch');
+    first.stop();
+    const second = mount(stream([]), store);
+    await flush();
+    const name = second.root.querySelector<HTMLInputElement>('input[name="surface"]')!;
+
+    name.value = 'blue  couch';
+    name.dispatchEvent(new Event('input'));
+    await flush();
+
+    expect(second.root.querySelector<HTMLSelectElement>('select[name="type"]')?.value).toBe('couch');
+  });
+
   it('clears the missing-name error as soon as the user types', async () => {
     const { root } = mount(stream([]), await storeWith(withReference()));
     await flush();
