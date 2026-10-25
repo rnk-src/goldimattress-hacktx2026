@@ -61,19 +61,21 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
   };
 }
 
-const renameMedian = (s: unknown): unknown =>
-  isObject(s) && 'median' in s ? Object.fromEntries(Object.entries(s).map(([k, v]) => [k === 'median' ? 'center' : k, v])) : s;
+const renameMedian = (s: Record<string, unknown>): unknown => {
+  const { median, ...rest } = s;
+  return median === undefined ? s : { center: median, ...rest };
+};
 
 /** v1 called `FeatureStats.center` `median`. Renames it in every stored reference. */
 function migrateV1(data: Record<string, unknown>): StoredData {
   const people = (data.people as Record<string, unknown>[]).map((p) => ({
     ...p,
     references: Object.fromEntries(
-      Object.entries(p.references as Record<string, Record<string, unknown>>).map(([routine, ref]) => {
-        const stats = ref.stats as Record<string, unknown> | undefined;
-        if (!isObject(stats)) return [routine, ref];
-        const features = isObject(stats.features) ? Object.fromEntries(Object.entries(stats.features).map(([k, v]) => [k, renameMedian(v)])) : stats.features;
-        return [routine, { ...ref, stats: { ...stats, features, leanDeg: renameMedian(stats.leanDeg), impactSpeed: renameMedian(stats.impactSpeed) } }];
+      Object.entries(p.references as Record<string, { stats: Record<string, Record<string, unknown>> }>).map(([routine, ref]) => {
+        const { features, leanDeg, impactSpeed } = ref.stats;
+        const renamed = Object.fromEntries(Object.entries(features!).map(([k, v]) => [k, renameMedian(v as Record<string, unknown>)]));
+        const stats = { ...ref.stats, features: renamed, leanDeg: renameMedian(leanDeg!), impactSpeed: renameMedian(impactSpeed!) };
+        return [routine, { ...ref, stats }];
       }),
     ),
   }));
