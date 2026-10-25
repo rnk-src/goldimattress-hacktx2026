@@ -196,6 +196,8 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (estimateRate(trace.samples.map((s) => s.t)) < MIN_RATE_HZ) {
     return reject(trace, ['low-sample-rate']);
   }
+  // shortcut: the free-fall drop model is not built yet (R3), so every rig-drop trace is no-drop-found.
+  if (trace.routine === 'rig-drop') return reject(trace, ['no-drop-found']);
   const mags = trace.samples.map(magnitude);
   const seg = segment(trace, mags);
   if (typeof seg === 'string') return reject(trace, [seg]);

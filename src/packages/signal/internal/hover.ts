@@ -24,15 +24,18 @@ export const DROP_JITTER = 1.0;
 const COVERAGE_TOL_S = 0.002;
 
 /** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
-const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
+const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az', 'rig-drop': 'az' };
 
-/** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign. */
+/** Angle in degrees between the mean gravity vector and the routine's lean axis. Ignores axis sign, except rig-drop where face-down reads as flipped. */
 function leanOf(window: readonly Sample[], routine: Routine): number {
   if (window.length === 0) return 0;
   const mean = (key: 'ax' | 'ay' | 'az') => window.reduce((sum, s) => sum + s[key], 0) / window.length;
   const m = { ax: mean('ax'), ay: mean('ay'), az: mean('az') };
   const length = magnitude(m);
-  const deg = (Math.acos(Math.min(1, Math.abs(m[LEAN_AXIS[routine]]) / length)) * 180) / Math.PI;
+  // shortcut: only rig-drop is signed (face-down reads 180); sit and bridge stay sign-agnostic, upgrade when a flipped phone must fail them too.
+  const along = m[LEAN_AXIS[routine]];
+  const cos = routine === 'rig-drop' ? along : Math.abs(along);
+  const deg = (Math.acos(Math.max(-1, Math.min(1, cos / length))) * 180) / Math.PI;
   // Zero or non-finite samples have no direction, so the lean is 0.
   return Number.isFinite(deg) ? deg : 0;
 }
