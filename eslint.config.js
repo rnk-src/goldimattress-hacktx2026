@@ -16,6 +16,8 @@ const domOnly = [
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', '.dependency-cruiser.cjs', 'package-groups.cjs'] },
   js.configs.recommended,
+  // The service worker is plain JS in public/, outside the app code, and runs with worker globals.
+  { files: ['public/sw.js'], languageOptions: { globals: globals.serviceworker } },
   ...tseslint.configs.recommended,
   {
     files: [`src/packages/{${groups.purePackages.join(',')}}/**/*.ts`],

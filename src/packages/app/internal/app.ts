@@ -5,6 +5,7 @@ import type { Access } from '../../sensors';
 import { positionCue } from '../../session';
 import { DEFAULT_RIG, assessHover, createPositionTracker, routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
+import { historyView } from './history';
 import { rigSetupView } from './rig-setup';
 import { testView } from './test-flow';
 import { shortDeviceModel, withRepMetadata } from './metadata';
@@ -61,6 +62,7 @@ function permissionView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach)
           <a href="#/calibrate">Calibrate a surface</a>
           <a href="#/test">Test a surface</a>
           <a href="#/rig">Rig setup</a>
+          <a href="#/history">Saved tests</a>
           <a href="#/profile">Profiles</a>
           <a href="#/capture">Raw capture</a>
         </nav>
@@ -414,7 +416,7 @@ function captureView(
   };
 }
 
-const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/test', '#/rig', '#/profile'];
+const ROUTES = ['#/permission', '#/capture', '#/calibrate', '#/test', '#/rig', '#/history', '#/profile'];
 
 function profileView(root: HTMLElement, deps: AppDeps): () => void {
   root.innerHTML = `<div class="app-shell">${brandHeader('Profiles')}<main class="app-main profile-view"><h1>Profiles</h1></main></div>`;
@@ -457,6 +459,7 @@ export function startApp(root: HTMLElement, deps: AppDeps): () => void {
     else if (route === '#/calibrate') leaveRoute = calibrateView(root, appDeps, getCoach);
     else if (route === '#/test') leaveRoute = testView(root, appDeps, getCoach);
     else if (route === '#/rig') leaveRoute = rigSetupView(root, appDeps);
+    else if (route === '#/history') leaveRoute = historyView(root, appDeps);
     else if (route === '#/profile') leaveRoute = profileView(root, appDeps);
     else permissionView(root, appDeps, getCoach);
   };

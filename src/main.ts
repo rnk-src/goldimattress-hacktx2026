@@ -20,3 +20,10 @@ window.addEventListener('pagehide', (event) => {
   // A persisted page may come back from the back/forward cache, so keep it intact.
   if (!event.persisted) unmount();
 });
+
+declare const __BUILD_ID__: string;
+
+// Offline use: the worker stores the app after one visit. Skipped in dev, where it would hide edits.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js?v=${__BUILD_ID__}`).catch(() => undefined);
+}
