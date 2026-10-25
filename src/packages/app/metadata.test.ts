@@ -13,6 +13,11 @@ const verdict: Verdict = {
   bouncier: false,
   match: 100,
   perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  hardnessInterval: [0, 0],
+  springinessInterval: [0, 0],
+  confidence: 'confident',
+  hardnessReliable: false,
+  caveats: [],
 };
 
 const rep = (): RepResult => ({
@@ -22,6 +27,7 @@ const rep = (): RepResult => ({
   leanDeg: 15,
   hoverJitter: 0.1,
   weight: 1,
+  issues: [],
   trace: { ...synthRep(), device: '', startedAt: '' },
 });
 
@@ -75,7 +81,7 @@ describe('saved rep metadata', () => {
       listTests: () => Promise.resolve([]),
     };
     const appStore = withRepMetadata(store, 'iPhone', () => new Date('2026-10-24T17:00:00.000Z'));
-    const stats = { mean: 1, std: 0.1 };
+    const stats = { median: 1, mad: 0.1 };
     const person: Person = {
       id: 'p1',
       name: 'Ana',
@@ -88,6 +94,7 @@ describe('saved rep metadata', () => {
             features: { peakOverV: stats, stopTime: stats, bounceRatio: stats, settleTime: stats },
             leanDeg: stats,
             impactSpeed: stats,
+            jitterScale: 0.1,
           },
           reps: [rep()],
         },
