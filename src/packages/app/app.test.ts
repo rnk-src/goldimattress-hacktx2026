@@ -235,6 +235,9 @@ describe('startApp', () => {
     expect(recording.surface).toBe('Blue couch');
     expect(recording.traces).toHaveLength(5);
     expect(recording.traces.every((trace) => trace.samples.length > 0)).toBe(true);
+    // The window keeps a margin beyond preRollS + captureS so a late drop is still recorded.
+    const span = recording.traces[0]!.samples.at(-1)!.t - recording.traces[0]!.samples[0]!.t;
+    expect(span).toBeGreaterThan(spec.preRollS + spec.captureS);
   });
 
   it('shows the measured sample rate and event interval', async () => {
