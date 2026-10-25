@@ -1,5 +1,5 @@
 import type { Cue, CueKey, LiveState, ReferenceStats, RepResult, Routine, Sample } from '../../domain';
-import { analyzeRep, assessHover, routineSpec } from '../../signal';
+import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, routineSpec } from '../../signal';
 import { rejectMessage } from './messages';
 
 export interface SessionOptions {
@@ -26,15 +26,11 @@ export interface RepSession {
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
 
-/** |a| this far above 1 g marks a drop landing during a rest, m/s². Same value signal uses for an impact. */
-const IMPACT_EXCESS = 1.5;
-const G = 9.81;
-
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
   'hold-still': { key: 'hold-still', text: 'Hold still.' },
-  'lean-less': { key: 'lean-less', text: 'Lean a bit less.' },
-  'lean-more': { key: 'lean-more', text: 'Lean a bit more.' },
+  'lean-less': { key: 'lean-less', text: rejectMessage('lean-too-much') },
+  'lean-more': { key: 'lean-more', text: rejectMessage('lean-too-little') },
   'drop-when-ready': { key: 'drop-when-ready', text: 'Relax your legs and drop.', beep: 'ready' },
   captured: { key: 'captured', text: 'Drop detected. Stay still and hold your breath.', beep: 'captured' },
   'rep-accepted': { key: 'rep-accepted', text: 'Good rep.', beep: 'accepted' },
@@ -126,7 +122,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
         if (s.t >= restEndT - EPS) {
           setState('positioning', out);
           cue('next-rep', out);
-        } else if (!restWarned && Math.hypot(s.ax, s.ay, s.az) - G > IMPACT_EXCESS) {
+        } else if (!restWarned && Math.hypot(s.ax, s.ay, s.az) - GRAVITY > IMPACT_EXCESS) {
           restWarned = true;
           cue('rest', out, restText, true);
         }
