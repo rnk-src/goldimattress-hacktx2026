@@ -1,5 +1,6 @@
 import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
 import { FLIGHT_ACCEL } from './constants';
+import { lowRuns } from './drop-model';
 import type { FoundDrop } from './drop-model';
 import { repFeatures } from './features';
 import { DROP_JITTER, assessHover } from './hover';
@@ -39,17 +40,9 @@ function hasGap(samples: readonly Sample[], from: number, untilT: number): boole
 
 /** True when |a| stays near 0 g for FLIGHT_MIN_S after the impact: a second free fall. */
 function leftSurface(trace: Trace, mags: readonly number[], impact: number): boolean {
-  let flightStartT: number | null = null;
-  for (let i = impact; i < mags.length; i++) {
-    if (mags[i]! >= FLIGHT_ACCEL) {
-      flightStartT = null;
-      continue;
-    }
-    const t = trace.samples[i]!.t;
-    flightStartT ??= t;
-    if (t - flightStartT >= FLIGHT_MIN_S) return true;
-  }
-  return false;
+  return lowRuns(mags, FLIGHT_ACCEL, impact).some(
+    ({ start, end }) => trace.samples[end]!.t - trace.samples[start]!.t >= FLIGHT_MIN_S,
+  );
 }
 
 /** Impact speed, features, lean and flight time, or null when the speed or a feature is not a finite number. */

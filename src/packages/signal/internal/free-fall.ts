@@ -1,12 +1,10 @@
 import type { RejectReason, Sample, Trace } from '../../domain';
-import { GRAVITY } from './constants';
-import { firstPeakAfter, hoverFromOf, riseStart } from './drop-model';
+import { FALL_ACCEL, GRAVITY } from './constants';
+import { firstPeakAfter, hoverFromOf, lowRuns, riseStart } from './drop-model';
 import type { DropModel, Segments } from './drop-model';
 import { DEFAULT_RIG } from './rig';
 import { combine, factor, jitterScore, ramp } from './score';
 
-/** A free fall must read below this |a|, m/s². Half of 1 g, so a hand that drags the slab still counts and shows as a flight mismatch. */
-const FALL_ACCEL = GRAVITY / 2;
 /** Fewest samples in a free fall. A 5 cm fall is about 6 samples at 57 Hz. */
 const MIN_FALL_SAMPLES = 3;
 /** The fall time may differ from sqrt(2h/g) by this share before the weight drops: timing is good to about 17% at 5 cm. */
@@ -23,22 +21,17 @@ const REST_WINDOW_S = 0.3;
 /**
  * The first run of at least MIN_FALL_SAMPLES samples below FALL_ACCEL that a rise above the impact threshold
  * follows. `flightS` is the run's length. The first still-to-fall change is the release, so no dip length is needed.
- * shortcut: FALL_ACCEL is half of g, not FLIGHT_ACCEL, so a dragged fall is found and scored; re-check on real rig data.
+ * shortcut: FALL_ACCEL (see constants.ts) is a guess, re-check on real rig data.
  */
 function freeFallDrop(trace: Trace, mags: readonly number[], hoverMinS: number): { seg: Segments; flightS: number } | RejectReason {
   const { samples } = trace;
-  for (let start = 0; start < mags.length; start++) {
-    if (mags[start]! >= FALL_ACCEL) continue;
-    let end = start;
-    while (end + 1 < mags.length && mags[end + 1]! < FALL_ACCEL) end++;
+  for (const { start, end } of lowRuns(mags, FALL_ACCEL)) {
     const count = end - start + 1;
     const peak = count >= MIN_FALL_SAMPLES ? firstPeakAfter(samples, mags, end) : -1;
-    if (peak >= 0) {
-      const flightS = ((samples[end]!.t - samples[start]!.t) * count) / (count - 1);
-      const seg = { impact: riseStart(mags, end, peak), descentStart: start, hoverFrom: hoverFromOf(trace, start, hoverMinS) };
-      return { seg, flightS };
-    }
-    start = end;
+    if (peak < 0) continue;
+    const flightS = ((samples[end]!.t - samples[start]!.t) * count) / (count - 1);
+    const seg = { impact: riseStart(mags, end, peak), descentStart: start, hoverFrom: hoverFromOf(trace, start, hoverMinS) };
+    return { seg, flightS };
   }
   return 'no-drop-found';
 }
