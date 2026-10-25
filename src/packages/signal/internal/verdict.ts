@@ -1,6 +1,7 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
 import { FEATURES } from './features-table';
 import { weightedMedian } from './math';
+import { summarize } from './summarize';
 import { isUsable } from './reference';
 
 /** Share of |μ_ref| below which a spread is treated as noise. */
@@ -46,13 +47,13 @@ export function compare(
   }
   const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
+  const summary = summarize(usable);
   const z: Partial<Record<FeatureName, number>> = {};
   const axes = { hardness: [] as number[], springiness: [] as number[] };
   for (const { name, absFloor, axis, sign } of FEATURES) {
-    const median = weightedMedian(usable.map((r) => r.features[name]), weights);
     const { median: mu, mad } = ref.features[name];
     const sigmaEff = Math.max(mad, floorFactor * Math.max(REL_FLOOR * Math.abs(mu), absFloor));
-    const value = (median - mu) / sigmaEff;
+    const value = (summary.features[name].median - mu) / sigmaEff;
     z[name] = value;
     if (axis !== null) axes[axis].push(sign * value);
   }
