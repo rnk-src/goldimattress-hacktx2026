@@ -12,7 +12,9 @@ export type { AppDeps };
 
 // Raw capture records sit-drops, so it reads the sit-drop timings.
 const CAPTURE_SPEC = routineSpec('sit-drop');
-const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS;
+/** Extra seconds so a drop that comes a little late still lands inside the window. */
+const LATE_DROP_MARGIN_S = 1;
+const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS + LATE_DROP_MARGIN_S;
 const REST_S = CAPTURE_SPEC.restS;
 
 
