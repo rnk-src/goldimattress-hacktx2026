@@ -146,7 +146,7 @@ describe('hardness on the real surfaces', () => {
   const SURFACES = ['couch-set1', 'desk-chair-set1', 'hard-chair-set2', 'mesh-chair-set1'] as const;
   const repsOf = (set: (typeof SURFACES)[number]) => loadFixture(set).traces.map((t) => analyzeRep(t));
 
-  it('reads the firmer surface as firmer in at least 5 of the 6 pairs, scoring hardness on raw peak', () => {
+  it('reads the firmer surface as firmer in all 6 pairs, scoring hardness on raw peak', () => {
     let right = 0;
     for (let soft = 0; soft < SURFACES.length; soft++) {
       for (let firm = soft + 1; firm < SURFACES.length; firm++) {
@@ -155,6 +155,6 @@ describe('hardness on the real surfaces', () => {
         if (compare(repsOf(SURFACES[firm]!), built.ref).perFeatureZ.peak > 0) right++;
       }
     }
-    expect(right).toBeGreaterThanOrEqual(5);
+    expect(right).toBe(6);
   });
 });
