@@ -1,10 +1,10 @@
-import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
+import type { ReferenceStats, RejectReason, RepFeatures, RepResult, Sample, Trace } from '../../domain';
+import { GRAVITY } from './constants';
 import { repFeatures } from './features';
 import { assessHover } from './hover';
 import { estimateRate, integrate, magnitude } from './math';
 import { routineSpec } from './routine';
 
-const G = 9.81;
 /** |a| this far above 1 g marks the impact, m/s². Above hover wobble, below the weakest real impact. */
 const IMPACT_EXCESS = 1.5;
 /** |a| this far below 1 g counts as the descent, m/s². */
@@ -66,9 +66,56 @@ function leftSurface(trace: Trace, mags: readonly number[], impact: number): boo
 function impactSpeedOf(trace: Trace, mags: readonly number[], descentStart: number, impact: number): number {
   const from = Math.max(0, descentStart - 1);
   const t = trace.samples.slice(from, impact).map((s) => s.t);
-  const excess = mags.slice(from, impact).map((m) => m - G);
+  const excess = mags.slice(from, impact).map((m) => m - GRAVITY);
   const step = trace.samples[impact]!.t - trace.samples[impact - 1]!.t;
   return -(integrate(t, excess) + (step / 2) * excess[excess.length - 1]!);
+}
+
+type Segments = { impact: number; descentStart: number; hoverFrom: number };
+
+/** Finds the hover, descent and impact, or says why the trace has none. */
+function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
+  const trigger = mags.findIndex((m) => m - GRAVITY > IMPACT_EXCESS);
+  if (trigger < 0) return 'no-drop-found';
+  // A light-damped impact rises slowly, so back up over the rise to the end of the descent.
+  // shortcut: a descent with less than DESCENT_DEFICIT of deficit is not seen, so the rep is rejected as not-still.
+  let impact = trigger;
+  while (impact > 0 && GRAVITY - mags[impact - 1]! <= DESCENT_DEFICIT) impact--;
+  if (impact < 1) return 'no-drop-found';
+  let descentStart = impact;
+  while (descentStart > 0 && GRAVITY - mags[descentStart - 1]! > DESCENT_DEFICIT) descentStart--;
+  const hoverStartT = trace.samples[descentStart]!.t - routineSpec(trace.routine).hoverMinS - EPS;
+  const hoverFrom = trace.samples.findIndex((s) => s.t >= hoverStartT);
+  if (hasGap(trace.samples, hoverFrom, trace.samples[impact]!.t + GAP_WINDOW_AFTER_IMPACT_S)) {
+    return 'low-sample-rate';
+  }
+  return { impact, descentStart, hoverFrom };
+}
+
+/** Impact speed, features and lean, or null when any of them is not a finite, positive-speed number. */
+function measure(
+  trace: Trace,
+  mags: readonly number[],
+  { impact, descentStart }: Segments,
+  leanDeg: number,
+) {
+  const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
+  if (!(impactSpeed > 0 && Number.isFinite(impactSpeed))) return null;
+  const features = repFeatures(trace.samples, impact, impactSpeed);
+  return features === null ? null : { features, impactSpeed, leanDeg };
+}
+
+/** Reasons from the caught-landing limit and, with a reference, the impact-speed window. */
+function gate(trace: Trace, m: { features: RepFeatures; impactSpeed: number }, ref?: ReferenceStats) {
+  const reasons: RejectReason[] = [];
+  if (m.features.stopTime > CAUGHT_STOP_S) reasons.push('caught-landing');
+  if (ref) {
+    const ratio = m.impactSpeed / ref.impactSpeed.mean;
+    const { speedTol } = routineSpec(trace.routine);
+    if (ratio > 1 + speedTol) reasons.push('too-fast');
+    else if (ratio < 1 - speedTol) reasons.push('too-slow');
+  }
+  return reasons;
 }
 
 /** Full per-rep pipeline. Never throws on bad data. */
@@ -77,39 +124,17 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
     return reject(trace, ['low-sample-rate']);
   }
   const mags = trace.samples.map(magnitude);
-  const trigger = mags.findIndex((m) => m - G > IMPACT_EXCESS);
-  if (trigger < 0) return reject(trace, ['no-drop-found']);
-  // A light-damped impact rises slowly, so back up over the rise to the end of the descent.
-  // shortcut: a descent with less than DESCENT_DEFICIT of deficit is not seen, so the rep is rejected as not-still.
-  let impact = trigger;
-  while (impact > 0 && G - mags[impact - 1]! <= DESCENT_DEFICIT) impact--;
-  if (impact < 1) return reject(trace, ['no-drop-found']);
-  let descentStart = impact;
-  while (descentStart > 0 && G - mags[descentStart - 1]! > DESCENT_DEFICIT) descentStart--;
-  const { hoverMinS, speedTol } = routineSpec(trace.routine);
-  const hoverStartT = trace.samples[descentStart]!.t - hoverMinS - EPS;
-  const hoverFrom = trace.samples.findIndex((s) => s.t >= hoverStartT);
-  const hover = trace.samples.slice(hoverFrom, descentStart);
-  if (hasGap(trace.samples, hoverFrom, trace.samples[impact]!.t + GAP_WINDOW_AFTER_IMPACT_S)) {
-    return reject(trace, ['low-sample-rate']);
-  }
-  const assessment = assessHover(hover, trace.routine, ref);
-  const reasons: RejectReason[] = [...assessment.reasons];
-  if (leftSurface(trace, mags, impact)) reasons.push('left-surface');
-  if (reasons.length > 0) return reject(trace, reasons);
-  const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
-  if (!(impactSpeed > 0 && Number.isFinite(impactSpeed))) return reject(trace, ['no-drop-found']);
-  const features = repFeatures(trace.samples, impact, impactSpeed);
-  if (features === null || !Object.values(features).every(Number.isFinite)) {
-    return reject(trace, ['no-drop-found']);
-  }
-  if (!Number.isFinite(assessment.leanDeg)) return reject(trace, ['no-drop-found']);
-  if (features.stopTime > CAUGHT_STOP_S) reasons.push('caught-landing');
-  if (ref) {
-    const ratio = impactSpeed / ref.impactSpeed.mean;
-    if (ratio > 1 + speedTol) reasons.push('too-fast');
-    else if (ratio < 1 - speedTol) reasons.push('too-slow');
-  }
-  if (reasons.length > 0) return reject(trace, reasons);
-  return { ok: true, features, impactSpeed, leanDeg: assessment.leanDeg, trace };
+  const seg = segment(trace, mags);
+  if (typeof seg === 'string') return reject(trace, [seg]);
+
+  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, ref);
+  const early = [...assessment.reasons];
+  if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
+  if (early.length > 0) return reject(trace, early);
+
+  const measured = measure(trace, mags, seg, assessment.leanDeg);
+  if (measured === null) return reject(trace, ['no-drop-found']);
+  const late = gate(trace, measured, ref);
+  if (late.length > 0) return reject(trace, late);
+  return { ok: true, ...measured, trace };
 }
