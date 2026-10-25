@@ -317,6 +317,37 @@ describe('startApp', () => {
       expect(root.querySelector('[data-capture-status]')?.textContent).not.toContain('sternum');
     });
 
+    it.each([
+      ['a mistyped mass', 'massKg', '2,5', 'massKg'],
+      ['an empty mass', 'massKg', '', 'massKg'],
+      ['a zero drop height', 'dropHeightCm', '0', 'dropHeightCm'],
+    ])('shows an error and does not start for %s', async (_name, field, value, shown) => {
+      vi.useFakeTimers();
+      const root = document.createElement('main');
+      document.body.append(root);
+      window.location.hash = '#/capture';
+      const source = createReplaySource(replayTrace(), { realtime: true });
+      const start = vi.spyOn(source, 'start');
+      startApp(root, {
+        source,
+        store: store(),
+        makeCoach: coach,
+        now: () => new Date('2026-10-24T16:00:00.000Z'),
+        device: 'Replay phone',
+        newId: () => 'test-id',
+      });
+      const routine = root.querySelector<HTMLSelectElement>('[name="routine"]')!;
+      routine.value = 'rig-drop';
+      routine.dispatchEvent(new Event('change'));
+      root.querySelector<HTMLInputElement>(`[name="${field}"]`)!.value = value;
+      const button = root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')!;
+      button.click();
+      await vi.advanceTimersByTimeAsync(READY_MS);
+      expect(root.querySelector('[data-capture-status]')?.textContent).toContain(shown);
+      expect(start).not.toHaveBeenCalled();
+      expect(button.disabled).toBe(false);
+    });
+
     it('records the mass, height and spot the user sets', async () => {
       const traces = await captureRig((root) => {
         const set = (name: string, value: string) => {
