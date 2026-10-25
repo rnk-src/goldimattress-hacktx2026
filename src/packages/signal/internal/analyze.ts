@@ -1,9 +1,10 @@
-import type { ReferenceStats, RejectReason, RepFeatures, RepResult, Sample, Trace } from '../../domain';
+import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
 import { GRAVITY } from './constants';
 import { repFeatures } from './features';
-import { assessHover } from './hover';
+import { DROP_JITTER, assessHover } from './hover';
 import { estimateRate, integrate, magnitude } from './math';
 import { routineSpec } from './routine';
+import { scoreRep } from './score';
 
 /** |a| this far above 1 g marks the impact, m/s². Above hover wobble, below the weakest real impact. */
 export const IMPACT_EXCESS = 1.5;
@@ -35,12 +36,6 @@ const MAX_BRIDGED_SHARE = 0.25;
 const EPS = 1e-6;
 /** Below this rate the impact is too coarse to measure, Hz. */
 const MIN_RATE_HZ = 40;
-/**
- * A first lobe longer than this means tensed legs smeared the impact, s. The slowest real surface in
- * the synthetic grid (1 Hz bounce) stops after 0.49 s.
- * shortcut: absolute limit, a soft foam may be flagged; compare with the reference stopTime when real fixtures exist.
- */
-const CAUGHT_STOP_S = 0.6;
 /** |a| below this long enough after the impact means the mass left the surface, m/s². */
 const FLIGHT_ACCEL = 2;
 /** shortcut: a trough near 0 g this long counts as flight, so a rep at the contact limit may be rejected; tune on fixtures. */
@@ -167,7 +162,7 @@ function drops(trace: Trace, mags: readonly number[]): Segments[] {
 function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
   const candidates = drops(trace, mags);
   const still = candidates.find(
-    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine).still,
+    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, undefined, DROP_JITTER).still,
   );
   const chosen = still ?? candidates[0];
   if (chosen === undefined) return 'no-drop-found';
@@ -190,19 +185,6 @@ function measure(
   return features === null ? null : { features, impactSpeed, leanDeg };
 }
 
-/** Reasons from the caught-landing limit and, with a reference, the impact-speed window. */
-function gate(trace: Trace, m: { features: RepFeatures; impactSpeed: number }, ref?: ReferenceStats) {
-  const reasons: RejectReason[] = [];
-  if (m.features.stopTime > CAUGHT_STOP_S) reasons.push('caught-landing');
-  if (ref) {
-    const ratio = m.impactSpeed / ref.impactSpeed.mean;
-    const { speedTol } = routineSpec(trace.routine);
-    if (ratio > 1 + speedTol) reasons.push('too-fast');
-    else if (ratio < 1 - speedTol) reasons.push('too-slow');
-  }
-  return reasons;
-}
-
 /** Full per-rep pipeline. Never throws on bad data. */
 export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   if (estimateRate(trace.samples.map((s) => s.t)) < MIN_RATE_HZ) {
@@ -212,15 +194,17 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   const seg = segment(trace, mags);
   if (typeof seg === 'string') return reject(trace, [seg]);
 
-  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, ref);
-  const early = [...assessment.reasons];
+  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, undefined, DROP_JITTER);
+  // Only a hover too violent to be a hover is dropped; the rest of the hover quality is scored below.
+  const early: RejectReason[] = assessment.still ? [] : ['not-still'];
   if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
   if (early.length > 0) return reject(trace, early);
 
   const measured = measure(trace, mags, seg, assessment.leanDeg);
   if (measured === null) return reject(trace, ['no-drop-found']);
-  const late = gate(trace, measured, ref);
-  if (late.length > 0) return reject(trace, late);
-  // shortcut: every valid rep weighs 1, replace with quality scoring on the signal scoring branch.
-  return { ok: true, ...measured, hoverJitter: assessment.jitter, weight: 1, trace };
+  const { weight, issues } = scoreRep(
+    { jitter: assessment.jitter, leanDeg: measured.leanDeg, impactSpeed: measured.impactSpeed, stopTime: measured.features.stopTime },
+    ref,
+  );
+  return { ok: true, ...measured, hoverJitter: assessment.jitter, weight, issues, trace };
 }

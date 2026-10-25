@@ -13,6 +13,8 @@ const HOVER_G_TOL = 2;
  * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
  */
 const MAX_JITTER = 0.45;
+/** A rep is dropped, not scored, when its hover jitter is above this, m/s². shortcut: a guess above the worst real fail (0.57), check with sloppy sets. */
+export const DROP_JITTER = 1.0;
 
 /**
  * How far under hoverMinS a window's covered time may fall, s. Real timestamps are rounded to 1 ms and uneven,
@@ -43,6 +45,7 @@ export function assessHover(
   window: readonly Sample[],
   routine: Routine,
   ref?: ReferenceStats,
+  maxJitter = MAX_JITTER,
 ): HoverAssessment {
   const jitter = std(window.map(magnitude));
   const n = window.length;
@@ -50,11 +53,11 @@ export function assessHover(
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
     Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
-    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
+    jitter <= maxJitter && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   if (ref) {
-    const off = leanDeg - ref.leanDeg.mean;
+    const off = leanDeg - ref.leanDeg.median;
     const tol = routineSpec(routine).leanTolDeg;
     if (off > tol) reasons.push('lean-too-much');
     else if (off < -tol) reasons.push('lean-too-little');
