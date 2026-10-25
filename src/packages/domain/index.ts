@@ -129,7 +129,7 @@ export interface Verdict {
   hardnessInterval: [number, number];
   springinessInterval: [number, number];
   confidence: Confidence;
-  /** False until the hardness axis is verified across surfaces; then the label and match ignore it. */
+  /** False until the hardness axis is verified across surfaces. While false, the match ignores hardness and the label should read "can't tell yet". */
   hardnessReliable: boolean;
   caveats: Caveat[];
 }

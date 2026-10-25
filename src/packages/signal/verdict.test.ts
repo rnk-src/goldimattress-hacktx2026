@@ -272,6 +272,13 @@ describe('buildReference', () => {
     expect(r.dropped).toEqual([5]);
   });
 
+  it('keeps reps of a dead-foam reference whose bounce ratio is near 0', () => {
+    const reps = [0, 0, 0.01, 0, 0.02].map((bounceRatio) => rep({ bounceRatio }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.dropped).toEqual([]);
+  });
+
   it('stores the median hover jitter of the kept reps as the jitter scale', () => {
     const reps = [0.1, 0.2, 0.3].map((hoverJitter) => rep({}, { hoverJitter }));
     const r = buildReference(reps, 'sit-drop');

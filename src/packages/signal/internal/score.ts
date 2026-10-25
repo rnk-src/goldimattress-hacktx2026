@@ -33,7 +33,8 @@ export function scoreRep(m: Measures, ref?: ReferenceStats): { weight: number; i
     if (f < 1) issues.push(issue);
     return f;
   };
-  const jitterScale = ref?.jitterScale ?? PRIOR_JITTER_SCALE;
+  // A calm person is judged no stricter than the prior, so a still reference cannot make a normal hover unusable.
+  const jitterScale = Math.max(ref?.jitterScale ?? 0, PRIOR_JITTER_SCALE);
   let weight = factor(ramp(m.jitter - 2 * jitterScale, 2 * jitterScale), 'not-still');
   if (ref) {
     const lean = m.leanDeg - ref.leanDeg.median;
@@ -41,8 +42,10 @@ export function scoreRep(m: Measures, ref?: ReferenceStats): { weight: number; i
       ramp(Math.abs(lean) - LEAN_FREE_DEG, LEAN_FALL_DEG),
       lean > 0 ? 'lean-too-much' : 'lean-too-little',
     );
-    const speed = m.impactSpeed / ref.impactSpeed.median - 1;
-    weight *= factor(ramp(Math.abs(speed) - SPEED_FREE, SPEED_FALL), speed > 0 ? 'too-fast' : 'too-slow');
+    if (ref.impactSpeed.median > 0) {
+      const speed = m.impactSpeed / ref.impactSpeed.median - 1;
+      weight *= factor(ramp(Math.abs(speed) - SPEED_FREE, SPEED_FALL), speed > 0 ? 'too-fast' : 'too-slow');
+    }
   }
   weight *= factor(ramp(m.stopTime - CAUGHT_STOP_S, CAUGHT_FALL_S), 'caught-landing');
   return { weight, issues };
