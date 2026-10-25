@@ -342,6 +342,13 @@ describe('buildReference', () => {
     expect(r.ref.jitterScale).toBeCloseTo(0.2);
   });
 
+  it('stores the summarize centre of hover jitter as the jitter scale from 5 reps', () => {
+    const reps = [0.1, 0.1, 0.2, 0.4, 0.9].map((hoverJitter) => rep({}, { hoverJitter }));
+    const r = buildReference(reps, 'sit-drop');
+    if (!r.ok) throw new Error('expected ok');
+    expect(r.ref.jitterScale).toBeCloseTo((0.1 + 0.2 + 0.4) / 3);
+  });
+
   it('accepts a wide spread of impact speed and lean without failing', () => {
     const r = buildReference(five((i) => rep({}, { impactSpeed: 0.4 + 0.2 * i, leanDeg: 5 + 6 * i })), 'sit-drop');
     expect(r.ok).toBe(true);

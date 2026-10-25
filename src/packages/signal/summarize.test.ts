@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { RepResult } from '../domain';
 import { summarize } from './index';
 
-const rep = (peakOverV: number, weight = 1): RepResult => ({
+const rep = (peakOverV: number, weight = 1, extra: { leanDeg?: number; impactSpeed?: number; hoverJitter?: number } = {}): RepResult => ({
   ok: true,
   features: { peak: 5, peakOverV, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 },
   impactSpeed: 0.6,
   leanDeg: 15,
   hoverJitter: 0.1,
+  ...extra,
   weight,
   issues: [],
   trace: { routine: 'sit-drop', sampleRateHz: 60, device: 'test', startedAt: '2026-01-01T00:00:00.000Z', samples: [] },
@@ -48,5 +49,20 @@ describe('summarize', () => {
 
   it('throws on zero total weight instead of returning NaN', () => {
     expect(() => summarize([rep(20, 0), rep(21, 0)])).toThrow(RangeError);
+  });
+
+  it('gives lean, impact speed and hover jitter the same centre rule as the features', () => {
+    const lean = [10, 11, 14, 20, 60];
+    const s = summarize(lean.map((leanDeg, i) => rep(20, 1, { leanDeg, hoverJitter: [0.1, 0.1, 0.2, 0.4, 0.9][i]!, impactSpeed: 0.5 + 0.1 * i })));
+    expect(s.leanDeg.center).toBeCloseTo(15); // trimmed mean of 11 14 20; the median is 14
+    expect(s.hoverJitter.center).toBeCloseTo((0.1 + 0.2 + 0.4) / 3);
+    expect(s.impactSpeed.center).toBeCloseTo(0.7);
+    expect(s.leanDeg.mad).toBeCloseTo(1.4826 * 4); // about the median 14
+  });
+
+  it('counts only usable reps: a rep under the usable weight is ignored', () => {
+    const s = summarize([rep(20), rep(20), rep(20), rep(99, 0.3)]);
+    expect(s.n).toBe(3);
+    expect(s.features.peakOverV.center).toBeCloseTo(20);
   });
 });

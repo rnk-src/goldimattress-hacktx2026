@@ -106,9 +106,9 @@ export interface RoutineSpec {
 }
 
 export interface FeatureStats {
-  /** Quality-weighted centre: the median, or the trimmed mean from 5 reps. */
+  /** Quality-weighted centre of a column of usable reps: the trimmed mean from 5 reps, the median below. The same rule for every column. */
   center: number;
-  /** Quality-weighted MAD × 1.4826, comparable to a standard deviation. */
+  /** Quality-weighted MAD about the median × 1.4826, comparable to a standard deviation. */
   mad: number;
 }
 
@@ -120,7 +120,7 @@ export interface ReferenceStats {
   features: Record<FeatureName, FeatureStats>;
   leanDeg: FeatureStats;
   impactSpeed: FeatureStats;
-  /** Median hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
+  /** Centre (same rule as `FeatureStats.center`) of the hover jitter of the reps behind the reference, m/s². The person's own jitter scale. */
   jitterScale: number;
 }
 

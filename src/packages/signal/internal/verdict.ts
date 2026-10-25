@@ -1,9 +1,7 @@
 import type { Caveat, Confidence, FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
 import { FEATURES } from './features-table';
-import { weightedMedian } from './math';
 import { relFloorOf } from './routine';
-import { summarize } from './summarize';
-import { isUsable } from './reference';
+import { summarize, usableReps } from './summarize';
 
 /** A reference of fewer reps than this has an unreliable MAD, so its floors widen. */
 const FULL_REFERENCE_REPS = 5;
@@ -39,12 +37,11 @@ export function compare(
   ref: ReferenceStats,
   { hardnessReliable = false }: { hardnessReliable?: boolean } = {},
 ): Verdict {
-  const usable = reps.flatMap((r) => (r.ok && isUsable(r) ? [r] : []));
+  const usable = usableReps(reps);
   if (usable.length === 0) throw new RangeError('compare needs at least one usable rep');
   if (usable.some((r) => r.trace.routine !== ref.routine)) {
     throw new RangeError(`rep routine does not match reference routine ${ref.routine}`);
   }
-  const weights = usable.map((r) => r.weight);
   const floorFactor = ref.repCount < FULL_REFERENCE_REPS ? SMALL_REFERENCE_FLOOR_FACTOR : 1;
   const summary = summarize(usable);
   const relFloor = relFloorOf(ref.routine);
@@ -65,11 +62,11 @@ export function compare(
   const springinessInterval: [number, number] = [springiness - se, springiness + se];
 
   let confidence: Confidence = 'confident';
-  if (usable.length < MIN_REPS || average(weights) < MIN_MEAN_WEIGHT) confidence = 'not-enough-data';
+  if (usable.length < MIN_REPS || summary.meanWeight < MIN_MEAN_WEIGHT) confidence = 'not-enough-data';
   else if (straddles(springinessInterval) || (hardnessReliable && straddles(hardnessInterval))) confidence = 'close-call';
 
   const caveats: Caveat[] = [];
-  if (Math.abs(weightedMedian(usable.map((r) => r.leanDeg), weights) - ref.leanDeg.center) > LEAN_CAVEAT_DEG) {
+  if (Math.abs(summary.leanDeg.center - ref.leanDeg.center) > LEAN_CAVEAT_DEG) {
     caveats.push('lean-differs');
   }
   if (usable.some((r) => r.restSkipped)) caveats.push('rest-skipped');
