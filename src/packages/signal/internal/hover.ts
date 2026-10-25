@@ -14,6 +14,13 @@ const HOVER_G_TOL = 2;
  */
 const MAX_JITTER = 0.45;
 
+/**
+ * How far under hoverMinS a window's covered time may fall, s. Real timestamps are rounded to 1 ms and uneven,
+ * so an exact window measured 0.2996 s for 0.3 s. This is a tenth of a sample period at 60 Hz, so a window
+ * one sample short (0.0167 s) is still rejected.
+ */
+const COVERAGE_TOL_S = 0.002;
+
 /** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
 const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
 
@@ -43,7 +50,7 @@ export function assessHover(
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
     Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
-    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - 1e-6;
+    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   if (ref) {
