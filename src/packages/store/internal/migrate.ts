@@ -1,5 +1,5 @@
 import type { Person, Surface, TestRecord } from '../../domain';
-import { encodePerson, encodeTest } from './codec';
+import { decodeSamples, encodePerson, encodeTest } from './codec';
 import type { StoredPerson, StoredTest } from './codec';
 
 /** What `createLocalStore` keeps in storage today. */
@@ -14,6 +14,42 @@ export const emptyStored = (): StoredData => ({ version: 1, people: [], surfaces
 
 const isLists = (x: Record<string, unknown>): boolean =>
   Array.isArray(x.people) && Array.isArray(x.surfaces) && Array.isArray(x.tests);
+
+const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
+
+/** A stored trace holds one base64 string that decodes to whole samples. */
+function isStoredTrace(x: unknown): boolean {
+  if (!isObject(x) || typeof x.samples !== 'string') return false;
+  try {
+    decodeSamples(x.samples);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const areReps = (x: unknown): boolean =>
+  Array.isArray(x) && x.every((rep) => isObject(rep) && isStoredTrace(rep.trace));
+
+/**
+ * Checks the parts of a v1 blob the decoders rely on: people with references, tests with reps.
+ * shortcut: scalar fields (names, stats, verdicts) are trusted, so a hand-edited blob can still
+ * misbehave; add a schema check if the data ever comes from outside this app.
+ */
+function isValidV1(data: Record<string, unknown>): boolean {
+  const people = data.people as unknown[];
+  const tests = data.tests as unknown[];
+  return (
+    (data.surfaces as unknown[]).every(isObject) &&
+    people.every(
+      (p) =>
+        isObject(p) &&
+        isObject(p.references) &&
+        Object.values(p.references).every((ref) => isObject(ref) && areReps(ref.reps)),
+    ) &&
+    tests.every((t) => isObject(t) && areReps(t.reps))
+  );
+}
 
 /** v0 had no version field and kept every trace as a plain array of samples. */
 function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestRecord[] }): StoredData {
@@ -44,6 +80,6 @@ export function readStored(raw: string | null): StoredData {
   }
   const data = parsed as Record<string, unknown>;
   if (data.version === undefined) return migrateV0(data as Parameters<typeof migrateV0>[0]);
-  if (data.version === 1) return data as unknown as StoredData;
+  if (data.version === 1) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
   return emptyStored();
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createBrowserCoach } from './index';
 
 function createAudioFake(currentTime = 10) {
@@ -219,5 +219,59 @@ describe('createBrowserCoach', () => {
 
     expect(cancels).toBe(1);
     expect(closes).toBe(1);
+  });
+});
+
+describe('createBrowserCoach without an env', () => {
+  const win = window as unknown as Record<string, unknown>;
+  const nav = navigator as unknown as Record<string, unknown>;
+  const keys = ['AudioContext', 'webkitAudioContext', 'speechSynthesis'];
+  afterEach(() => {
+    for (const key of keys) delete win[key];
+    delete nav.wakeLock;
+  });
+
+  it('beeps with the browser AudioContext', () => {
+    const fake = createAudioFake();
+    win.AudioContext = function AudioContext() {
+      return fake.context;
+    };
+    createBrowserCoach().play({ key: 'drop-when-ready', text: 'Go', beep: 'ready' });
+    expect(fake.starts).toEqual([10]);
+  });
+
+  it('falls back to webkitAudioContext', () => {
+    const fake = createAudioFake();
+    win.webkitAudioContext = function AudioContext() {
+      return fake.context;
+    };
+    createBrowserCoach().play({ key: 'drop-when-ready', text: 'Go', beep: 'ready' });
+    expect(fake.starts).toEqual([10]);
+  });
+
+  it('speaks with the browser speechSynthesis', () => {
+    const spoken: SpeechSynthesisUtterance[] = [];
+    win.speechSynthesis = { speak: (u: SpeechSynthesisUtterance) => spoken.push(u) };
+    createBrowserCoach().play({ key: 'hold-still', text: 'Hold still' });
+    expect(spoken.map((u) => u.text)).toEqual(['Hold still']);
+  });
+
+  it('holds the browser wake lock', async () => {
+    let requested = '';
+    nav.wakeLock = {
+      request: (type: string) => {
+        requested = type;
+        return Promise.resolve({ released: false, release: () => Promise.resolve() });
+      },
+    };
+    await createBrowserCoach().keepAwake(true);
+    expect(requested).toBe('screen');
+  });
+
+  it('stays silent when the browser has no audio, speech or wake lock', async () => {
+    const coach = createBrowserCoach();
+    coach.play({ key: 'drop-when-ready', text: 'Go', beep: 'ready' });
+    await coach.keepAwake(true);
+    coach.dispose();
   });
 });

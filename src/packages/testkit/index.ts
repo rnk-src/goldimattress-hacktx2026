@@ -3,5 +3,5 @@ export { loadFixture } from './internal/fixtures';
 export { memoryStorage } from './internal/storage';
 export { synthReps } from './internal/reps';
 export { synthStream } from './internal/stream';
-export { synthRep } from './internal/synth';
+export { GRAVITY, synthRep } from './internal/synth';
 export type { SynthFailure, SynthOptions } from './internal/synth';
