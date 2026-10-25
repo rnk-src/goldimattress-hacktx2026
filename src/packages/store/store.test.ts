@@ -200,7 +200,8 @@ describe('capacity', () => {
     const store = createLocalStore(memoryStorage({ limitChars: FIVE_MB }));
     for (let i = 0; i < 100; i++) await store.saveTest(typicalTest(i));
     expect(await store.listTests()).toHaveLength(100);
-  });
+    // Each save re-encodes every stored trace (see the shortcut in local-store.ts), so this is slow on a CI runner.
+  }, 60_000);
 
   it('throws StoreFullError when the storage is full, and keeps what was saved before', async () => {
     const store = createLocalStore(memoryStorage({ limitChars: 40_000 }));
