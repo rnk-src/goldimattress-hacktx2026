@@ -180,7 +180,40 @@ Robust phone-only features: peak |a|/v, stopping time, settle time (within ±0.0
 - Stack: board → plate → case → phone, screen up. The phone rides on top and never touches the surface.
 - Rules: no superglue (brittle, does not bond TPU), no water bottles or sandbags (slosh adds fake damping), no foam between phone and plate. Keep drops under 15 cm and tether the rig.
 - Drawback: a carried weight is not practical.
-- Product form: a 3 in × 1 in steel puck (~0.9 kg) with an ESP32 + IMU inside.
+- Product form (earlier idea): a 3 in × 1 in steel puck (~0.9 kg) with an ESP32 + IMU inside. See "Proposed product form: slab rig" below for the current proposal.
+
+### Proposed product form: slab rig (proposal, not scheduled)
+Status: build it only if the 5 lb plate experiment shows a much smaller rep-to-rep spread than the body. The lead decides.
+
+Why:
+- Body drops vary 13% (best set) to 27–44% from rep to rep. Instrument noise is about 1%, so the person is the noise source.
+- A 5-versus-5 test then resolves about a 30% to 60% difference in peak. Peak scales with √stiffness, so that is about 1.7× to 2.5× in stiffness. This is too coarse to separate neighbouring cushions or mattress grades.
+- A fixed mass removes the person. Hand release still adds some noise.
+
+Spec:
+- Block: a steel slab, 175 × 90 mm (the largest phone with a thick case, centred on it). The phone rides on top. Any smaller phone fits on the same block, so the rig does not depend on the phone or case model.
+- Mass: about 1.9 kg (4.2 lb), 1.5 cm thick. With the phone the rig is about 2.15 kg and presses about 1.3 kPa, which matches a body (1.2–1.4 kPa). The same footprint with a 5 lb block (2.3 kg, 1.9 cm thick) presses about 1.6 kPa.
+
+| Steel block | Total with phone | Pressure | Thickness |
+|---|---|---|---|
+| 1.0 kg | 1.25 kg | 0.78 kPa | 0.8 cm |
+| 1.5 kg | 1.75 kg | 1.09 kPa | 1.2 cm |
+| 1.9 kg (chosen) | 2.15 kg | 1.34 kPa | 1.5 cm |
+| 2.3 kg (5 lb) | 2.55 kg | 1.59 kPa | 1.9 cm |
+
+- Footprint: keep it wide and flat. A small base presses much harder than a body (about 9 kPa at 6 cm, 3.5 kPa at 10 cm), so it reads the top layer and bottoms out on thin cushions.
+- Material: steel. Aluminium needs a 4.5 cm block for the same mass. No lead. Chamfer the edges, paint or wrap against rust, leave the bottom face bare because anything soft there adds compliance.
+- Phone holder: the phone's back lies flat on the top face with a 1 mm silicone or rubber sheet. Use a Velcro strap through two slots, or a manual spring bar clamp. No motor, no foam, no flexible arm. A soft link damps the impact: the same chair gave stop time 0.22 s and bounce ratio 0.13 with the phone held out, and 0.14 s and 0.26 on the chest.
+- Release: by hand from a 5 to 10 cm spacer, flat, with both hands. A PVC pipe as a guide is optional. Use the nominal height for the impact speed, v = √(2gh). The fall time (v = g·t) is only a cross-check: at 5 cm the fall lasts about 0.1 s, about 6 samples, so it is good to roughly ±17%.
+- Cost target: hardware of $15 or less (scrap or thrift steel, silicone sheet, strap). A motorized car mount alone costs more than that. Supplier prices are unchecked; an online cut-to-size steel plate may cost $15 to $30.
+- Depth: the rig reads to about one to two times its footprint width (about 9 to 18 cm). This is a rough elastic estimate and is not checked on foam. The rig will not reach a 20 cm support core. Check it with the topper experiment, using a 2.3 kg and a 4.5 kg rig.
+- Safety: strap the phone on, keep drops at 10 cm or less, keep hands and feet clear.
+
+Software, when the rig is chosen:
+- A new routine, `rig-drop`, with no hover check and no phone-position cue. The free fall (|a| near 0) marks the release.
+- Hardness is the raw peak and springiness is the bounce ratio. Do not use speed-based features.
+
+Decision gate, from 10 drops on one surface: a spread of about 5% or less means fine discrimination is possible and the rig is worth building. A spread of 10% to 15% means the surface itself is the limit, and the rig is dropped. The rig is no longer phone-only.
 
 ### Textbook
 - A flat 8.5 × 11 in book needs ~8 kg (3–5 hardcovers) for body pressure. One 2 kg book gives ~0.36 kPa.
