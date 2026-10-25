@@ -35,7 +35,7 @@ const isStat = (x: unknown): boolean => isObject(x) && 'center' in x;
 
 /** Reference stats in the current shape (`center`, not the old `median` or `mean`). */
 const isStats = (x: unknown): boolean =>
-  isObject(x) && isObject(x.features) && isStat(x.leanDeg) && isStat(x.impactSpeed) && typeof x.jitterScale === 'number';
+  isObject(x) && isObject(x.features) && Object.values(x.features).every(isStat) && isStat(x.leanDeg) && isStat(x.impactSpeed) && typeof x.jitterScale === 'number';
 
 /**
  * Checks the parts of a v2 blob the decoders rely on: people with references and stats, tests with reps.
