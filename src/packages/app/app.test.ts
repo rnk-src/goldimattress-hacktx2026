@@ -10,6 +10,7 @@ import { startApp } from './index';
 const spec = routineSpec('sit-drop');
 const WINDOW_MS = (spec.preRollS + spec.captureS + 1) * 1_000;
 const REST_MS = spec.restS * 1_000;
+const READY_MS = 10_000;
 
 function coach(): Coach {
   return {
@@ -175,13 +176,16 @@ describe('startApp', () => {
     start?.click();
 
     expect(start?.disabled).toBe(true);
+    expect(cues).toEqual([]);
+    await vi.advanceTimersByTimeAsync(READY_MS);
     expect(cues.map((cue) => cue.beep)).toEqual(['ready']);
 
     for (let repetition = 0; repetition < 5; repetition += 1) {
       await vi.advanceTimersByTimeAsync(WINDOW_MS);
       expect(cues.at(-1)?.beep).toBe('captured');
+      if (repetition === 4) break;
       await vi.advanceTimersByTimeAsync(REST_MS);
-      if (repetition < 4) expect(cues.at(-1)?.beep).toBe('ready');
+      expect(cues.at(-1)?.beep).toBe('ready');
     }
 
     expect(cues.map((cue) => cue.beep)).toEqual([
@@ -225,7 +229,7 @@ describe('startApp', () => {
     if (label) label.value = 'showroom set 1';
     if (surface) surface.value = 'Blue couch';
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
-    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
 
     const download = root.querySelector<HTMLAnchorElement>('[data-action="export-recording"]');
     expect(download?.getAttribute('href')).toBe('blob:test');
@@ -278,6 +282,8 @@ describe('startApp', () => {
     const progress = root.querySelector('[data-repetition-progress]');
     expect(progress?.children).toHaveLength(5);
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    expect(progress?.querySelector('[data-state="active"]')).toBeNull();
+    await vi.advanceTimersByTimeAsync(READY_MS);
     expect(progress?.querySelector('[data-state="active"]')?.textContent).toContain('1');
 
     await vi.advanceTimersByTimeAsync(WINDOW_MS + REST_MS + 1_000);
@@ -382,7 +388,7 @@ describe('startApp', () => {
     expect(start?.disabled).toBe(false);
     expect(stops).toBe(1);
     expect(awake).toEqual([true, false]);
-    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
     expect(root.textContent).not.toContain('Capture complete');
   });
 
@@ -416,6 +422,8 @@ describe('startApp', () => {
 
     root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
     let t = 0;
+    onSample?.({ t, ax: 0, ay: 9.81, az: 0 });
+    await vi.advanceTimersByTimeAsync(READY_MS);
     // Samples flow during the first three windows only.
     for (let rep = 0; rep < 5; rep += 1) {
       if (rep < 3) {
@@ -506,8 +514,117 @@ describe('startApp', () => {
     expect(stops).toBe(1);
     expect(awake).toEqual([true, false]);
     expect(root.textContent).toContain('Enable motion');
-    await vi.advanceTimersByTimeAsync(5 * (WINDOW_MS + REST_MS) + 5_000);
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS + 1_000);
     expect(stops).toBe(1);
     expect(root.textContent).not.toContain('Capture complete');
+  });
+});
+
+describe('raw capture countdown and timing', () => {
+  function mountCapture(label = '', surface = '') {
+    vi.useFakeTimers();
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'Replay phone',
+      newId: () => 'test-id',
+    });
+    const set = (name: string, value: string) => {
+      const input = root.querySelector<HTMLInputElement>(`[name="${name}"]`);
+      if (input) input.value = value;
+    };
+    if (label !== '') set('label', label);
+    if (surface !== '') set('surface', surface);
+    const countdown = () => root.querySelector('[data-countdown]')?.textContent ?? '';
+    const start = () => root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    return { root, countdown, start };
+  }
+
+  it('counts down the get-ready period before the first window', async () => {
+    const { root, countdown, start } = mountCapture();
+    start();
+    expect(countdown()).toBe('Get ready: first drop window opens in 10 s');
+    expect(root.querySelector('[data-rep-label]')?.textContent).toBe('Rep 1 of 5');
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(countdown()).toBe('Get ready: first drop window opens in 7 s');
+  });
+
+  it('counts down the recording window and the rest between reps', async () => {
+    const { root, countdown, start } = mountCapture();
+    start();
+    await vi.advanceTimersByTimeAsync(READY_MS);
+    const windowS = WINDOW_MS / 1_000;
+    expect(countdown()).toBe(`Recording: ${windowS} s left, drop now when ready`);
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - 4_000);
+    expect(countdown()).toBe('Recording: 4 s left, drop now when ready');
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(countdown()).toBe(`Rest: next rep opens in ${REST_MS / 1_000} s. Get back into the hover.`);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(countdown()).toContain(`opens in ${REST_MS / 1_000 - 3} s`);
+    expect(root.querySelector('[data-rep-label]')?.textContent).toContain('2 of 5');
+    await vi.advanceTimersByTimeAsync(REST_MS - 3_000);
+    expect(countdown()).toContain('Recording:');
+    expect(root.querySelector('[data-rep-label]')?.textContent).toBe('Rep 2 of 5');
+  });
+
+  it('finishes straight after the fifth window with no rest or countdown', async () => {
+    const { root, countdown, start } = mountCapture();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:done');
+    start();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS);
+    expect(root.querySelector('[data-action="export-recording"]')).not.toBeNull();
+    expect(root.textContent).toContain('Capture complete');
+    expect(countdown()).toBe('');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(countdown()).toBe('');
+  });
+
+  it('announces phases in the live region and keeps the ticking number out of it', () => {
+    const { root, start } = mountCapture();
+    start();
+    const countdown = root.querySelector('[data-countdown]');
+    expect(countdown?.closest('[aria-live]')).toBeNull();
+    expect(root.querySelector('[data-capture-status]')?.getAttribute('aria-live')).toBe('polite');
+  });
+});
+
+describe('export file name', () => {
+  async function exportedName(label: string, surface: string) {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:name');
+    const root = document.createElement('main');
+    document.body.append(root);
+    window.location.hash = '#/capture';
+    vi.useFakeTimers();
+    startApp(root, {
+      source: createReplaySource(replayTrace(), { realtime: true }),
+      store: store(),
+      makeCoach: coach,
+      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      device: 'Replay phone',
+      newId: () => 'test-id',
+    });
+    const set = (name: string, value: string) => {
+      root.querySelector<HTMLInputElement>(`[name="${name}"]`)!.value = value;
+    };
+    set('label', label);
+    set('surface', surface);
+    root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
+    await vi.advanceTimersByTimeAsync(READY_MS + 5 * WINDOW_MS + 4 * REST_MS);
+    return root.querySelector('[data-action="export-recording"]')?.getAttribute('download');
+  }
+
+  it.each([
+    ['Showroom set 1', 'Blue couch', 'goldimattress-recording-showroom-set-1-blue-couch.json'],
+    ['  A&B!!  ', 'Café #2 (new)', 'goldimattress-recording-a-b-caf-2-new.json'],
+    ['sofa 🛋️ test', '😴', 'goldimattress-recording-sofa-test-unnamed-surface.json'],
+    ['', '   ', 'goldimattress-recording-raw-capture-unnamed-surface.json'],
+    ['x'.repeat(80), 'y'.repeat(80), `goldimattress-recording-${'x'.repeat(30)}-${'y'.repeat(30)}.json`],
+  ])('names the download from %j and %j', async (label, surface, expected) => {
+    expect(await exportedName(label, surface)).toBe(expected);
   });
 });
