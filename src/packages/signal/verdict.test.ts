@@ -14,7 +14,7 @@ const BASE: RepFeatures = { peakOverV: 20, stopTime: 0.2, bounceRatio: 0.4, sett
 
 function rep(
   f: Partial<RepFeatures> = {},
-  o: { impactSpeed?: number; leanDeg?: number; routine?: Routine; weight?: number; hoverJitter?: number } = {},
+  o: { impactSpeed?: number; leanDeg?: number; routine?: Routine; weight?: number; hoverJitter?: number; restSkipped?: boolean } = {},
 ): RepResult {
   return {
     ok: true,
@@ -24,6 +24,7 @@ function rep(
     hoverJitter: o.hoverJitter ?? 0.1,
     weight: o.weight ?? 1,
     issues: [],
+    ...(o.restSkipped === undefined ? {} : { restSkipped: o.restSkipped }),
     trace: trace(o.routine),
   };
 }
@@ -51,14 +52,15 @@ describe('compare', () => {
     expect(v.match).toBeCloseTo(100);
   });
 
-  it('gives match 61 for H = 2, S = 0 and 37 for H = S = 2', () => {
+  it('gives match 61 for H = 2, S = 0 and 37 for H = S = 2 once hardness is reliable', () => {
+    const opts = { hardnessReliable: true };
     // 10% ref std, so a 20% shift is z = 2.
     const harder = rep({ peakOverV: 24, stopTime: 0.16 });
-    const h = compare([harder], ref());
+    const h = compare([harder], ref(), opts);
     expect(h.hardness).toBeCloseTo(2);
     expect(h.springiness).toBeCloseTo(0);
     expect(Math.round(h.match)).toBe(61);
-    const both = compare([rep({ peakOverV: 24, stopTime: 0.16, bounceRatio: 0.48, settleTime: 1.8 })], ref());
+    const both = compare([rep({ peakOverV: 24, stopTime: 0.16, bounceRatio: 0.48, settleTime: 1.8 })], ref(), opts);
     expect(both.springiness).toBeCloseTo(2);
     expect(Math.round(both.match)).toBe(37);
   });
@@ -120,6 +122,83 @@ describe('compare', () => {
     expect(at(1.9).springinessLabel).toBe('just-right');
     expect(at(2.1).springinessLabel).toBe('slightly');
     expect(at(3.1).springinessLabel).toBe('much');
+  });
+});
+
+describe('compare uncertainty', () => {
+  const fiveOf = (f: Partial<RepFeatures> = {}, o: Parameters<typeof rep>[1] = {}) =>
+    [0, 1, 2, 3, 4].map(() => rep(f, o));
+  /** A 10% shift of both springiness features is z = 1 against the 10% reference spread. */
+  const bouncy = (z: number) => ({ bounceRatio: 0.4 * (1 + 0.1 * z), settleTime: 1.5 * (1 + 0.1 * z) });
+
+  it('matches on springiness alone until hardness is reliable', () => {
+    const harder = compare([rep({ peakOverV: 24, stopTime: 0.16 })], ref());
+    expect(harder.hardnessReliable).toBe(false);
+    expect(harder.match).toBeCloseTo(100);
+    const bouncier = compare([rep(bouncy(2))], ref());
+    expect(Math.round(bouncier.match)).toBe(61);
+    expect(compare([rep()], ref(), { hardnessReliable: true }).hardnessReliable).toBe(true);
+  });
+
+  it('is confident with 5 usable reps that match the reference', () => {
+    expect(compare(fiveOf(), ref()).confidence).toBe('confident');
+  });
+
+  it('says not-enough-data below 3 usable reps', () => {
+    expect(compare([rep(), rep()], ref()).confidence).toBe('not-enough-data');
+  });
+
+  it('says not-enough-data when the usable reps are barely usable', () => {
+    expect(compare(fiveOf({}, { weight: 0.5 }), ref()).confidence).toBe('not-enough-data');
+  });
+
+  it('calls a springiness score near a label boundary a close call', () => {
+    expect(compare(fiveOf(bouncy(2)), ref()).confidence).toBe('close-call');
+    expect(compare(fiveOf(bouncy(3.1)), ref()).confidence).toBe('close-call');
+  });
+
+  it('is confident when the springiness interval sits inside one label', () => {
+    expect(compare(fiveOf(bouncy(0.5)), ref()).confidence).toBe('confident');
+    expect(compare(fiveOf(bouncy(5)), ref()).confidence).toBe('confident');
+  });
+
+  it('ignores hardness for confidence while hardness is unreliable', () => {
+    const harder = fiveOf({ peakOverV: 24, stopTime: 0.16 });
+    expect(compare(harder, ref()).confidence).toBe('confident');
+  });
+
+  it('gives each axis an interval of one standard error about the score', () => {
+    const v = compare([rep(bouncy(1)), rep(bouncy(1)), rep(bouncy(1)), rep(bouncy(1))], ref());
+    expect(v.springinessInterval[0]).toBeCloseTo(v.springiness - 0.5);
+    expect(v.springinessInterval[1]).toBeCloseTo(v.springiness + 0.5);
+  });
+
+  it('widens the spread floor by 1.5 for a reference built from 3 or 4 reps', () => {
+    const tight = { bounceRatio: 0.0001, settleTime: 0.0001 };
+    const full = compare(fiveOf(bouncy(2)), ref(tight));
+    const small = compare(fiveOf(bouncy(2)), { ...ref(tight), repCount: 3 });
+    expect(small.springiness).toBeCloseTo(full.springiness / 1.5);
+  });
+
+  it('takes the weighted median of the test reps, not the mean', () => {
+    const v = compare([rep({ peakOverV: 20 }), rep({ peakOverV: 20 }), rep({ peakOverV: 40 })], ref());
+    expect(v.perFeatureZ.peakOverV).toBeCloseTo(0);
+  });
+
+  it('does not count a rep below the usable weight', () => {
+    const v = compare([rep(), rep(), rep(), rep({ bounceRatio: 0.9, settleTime: 5 }, { weight: 0.2 })], ref());
+    expect(v.springiness).toBeCloseTo(0);
+  });
+
+  it('adds a lean caveat when the test lean differs from the reference by more than 10 degrees', () => {
+    expect(compare(fiveOf({}, { leanDeg: 30 }), ref()).caveats).toContain('lean-differs');
+    expect(compare(fiveOf({}, { leanDeg: 20 }), ref()).caveats).not.toContain('lean-differs');
+  });
+
+  it('adds a rest caveat when any rep skipped its rest', () => {
+    const reps = [...fiveOf().slice(0, 4), rep({}, { restSkipped: true })];
+    expect(compare(reps, ref()).caveats).toContain('rest-skipped');
+    expect(compare(fiveOf(), ref()).caveats).toEqual([]);
   });
 });
 
