@@ -17,7 +17,7 @@ describe('summarize', () => {
   it('moves less than the mean and lands closer to the truth than the median on 5 reps with one outlier', () => {
     const truth = 20;
     const values = [19, 19.8, 20.4, 20.6, 30];
-    const centre = summarize(values.map((v) => rep(v))).features.peakOverV.median;
+    const centre = summarize(values.map((v) => rep(v))).features.peakOverV.center;
     const mean = values.reduce((s, v) => s + v, 0) / values.length;
     expect(Math.abs(centre - truth)).toBeLessThan(Math.abs(mean - truth));
     expect(Math.abs(centre - truth)).toBeLessThan(Math.abs(20.4 - truth));
@@ -25,7 +25,7 @@ describe('summarize', () => {
 
   it('falls back to the weighted median below 5 reps', () => {
     const s = summarize([19, 20, 20.4, 30].map((v) => rep(v)));
-    expect(s.features.peakOverV.median).toBeCloseTo(20.2);
+    expect(s.features.peakOverV.center).toBeCloseTo(20.2);
   });
 
   it('reports n and the mean weight', () => {
@@ -43,7 +43,7 @@ describe('summarize', () => {
   it('splits a value on the trim cut line by weight', () => {
     // weights 1 1 2 1 0.5, total 5.5, keep [1.1, 4.4]: 20 x0.9, 30 x2, 40 x0.4
     const reps = [10, 20, 30, 40, 50].map((v, i) => rep(v, [1, 1, 2, 1, 0.5][i]!));
-    expect(summarize(reps).features.peakOverV.median).toBeCloseTo((18 + 60 + 16) / 3.3);
+    expect(summarize(reps).features.peakOverV.center).toBeCloseTo((18 + 60 + 16) / 3.3);
   });
 
   it('throws on zero total weight instead of returning NaN', () => {

@@ -106,8 +106,8 @@ export interface RoutineSpec {
 }
 
 export interface FeatureStats {
-  /** Quality-weighted median. */
-  median: number;
+  /** Quality-weighted centre: the median, or the trimmed mean from 5 reps. */
+  center: number;
   /** Quality-weighted MAD × 1.4826, comparable to a standard deviation. */
   mad: number;
 }
