@@ -38,6 +38,19 @@ describe('routineSpec', () => {
   });
 });
 
+describe('assessHover rig-drop lean', () => {
+  const still = (az: number): Sample[] =>
+    Array.from({ length: 60 }, (_, i) => ({ t: i / 60, ax: 0, ay: 0, az }));
+
+  it('reads a face-up rig as level', () => {
+    expect(assessHover(still(9.81), 'rig-drop').leanDeg).toBeCloseTo(0, 5);
+  });
+
+  it('reads a face-down rig as flipped, not level', () => {
+    expect(assessHover(still(-9.81), 'rig-drop').leanDeg).toBeCloseTo(180, 5);
+  });
+});
+
 describe('assessHover', () => {
   it('calls a still hover still and reports its lean within 1 degree', () => {
     const result = assessHover(hoverOf({ leanDeg: 15 }), 'sit-drop');
