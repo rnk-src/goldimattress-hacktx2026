@@ -34,6 +34,12 @@ const RISE_WITHIN_S = 0.4;
 const MAX_BRIDGED_SHARE = 0.25;
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
+/**
+ * A drop slower than this is not a drop, m/s. Real accepted reps measured 0.35 to 1.13; a rep that read 0.10 had
+ * a plausible shape but a nonsense bounce ratio.
+ * shortcut: from three real sets, re-check with softer surfaces.
+ */
+const MIN_IMPACT_SPEED = 0.2;
 /** Below this rate the impact is too coarse to measure, Hz. */
 const MIN_RATE_HZ = 40;
 /** |a| below this long enough after the impact means the mass left the surface, m/s². */
@@ -162,7 +168,7 @@ function drops(trace: Trace, mags: readonly number[]): Segments[] {
 function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
   const candidates = drops(trace, mags);
   const still = candidates.find(
-    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, undefined, DROP_JITTER).still,
+    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, DROP_JITTER).still,
   );
   const chosen = still ?? candidates[0];
   if (chosen === undefined) return 'no-drop-found';
@@ -180,7 +186,7 @@ function measure(
   leanDeg: number,
 ) {
   const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
-  if (!(impactSpeed > 0 && Number.isFinite(impactSpeed))) return null;
+  if (!(impactSpeed >= MIN_IMPACT_SPEED && Number.isFinite(impactSpeed))) return null;
   const features = repFeatures(trace.samples, impact, impactSpeed);
   return features === null ? null : { features, impactSpeed, leanDeg };
 }
@@ -194,7 +200,7 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   const seg = segment(trace, mags);
   if (typeof seg === 'string') return reject(trace, [seg]);
 
-  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, undefined, DROP_JITTER);
+  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, DROP_JITTER);
   // Only a hover too violent to be a hover is dropped; the rest of the hover quality is scored below.
   const early: RejectReason[] = assessment.still ? [] : ['not-still'];
   if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
@@ -202,9 +208,6 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
 
   const measured = measure(trace, mags, seg, assessment.leanDeg);
   if (measured === null) return reject(trace, ['no-drop-found']);
-  const { weight, issues } = scoreRep(
-    { jitter: assessment.jitter, leanDeg: measured.leanDeg, impactSpeed: measured.impactSpeed, stopTime: measured.features.stopTime },
-    ref,
-  );
+  const { weight, issues } = scoreRep({ jitter: assessment.jitter, stopTime: measured.features.stopTime }, ref);
   return { ok: true, ...measured, hoverJitter: assessment.jitter, weight, issues, trace };
 }

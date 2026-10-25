@@ -1,4 +1,4 @@
-import type { HoverAssessment, ReferenceStats, RejectReason, Routine, Sample } from '../../domain';
+import type { HoverAssessment, RejectReason, Routine, Sample } from '../../domain';
 import { GRAVITY } from './constants';
 import { magnitude, std } from './math';
 import { routineSpec } from './routine';
@@ -39,12 +39,11 @@ function leanOf(window: readonly Sample[], routine: Routine): number {
 
 /**
  * Stillness and lean over a hover window. Lean is degrees from the routine's axis, sign-agnostic.
- * Without a reference only stillness is judged; with one, lean must stay within the routine tolerance.
+ * Only stillness is judged; lean is recorded, because it differs by surface.
  */
 export function assessHover(
   window: readonly Sample[],
   routine: Routine,
-  ref?: ReferenceStats,
   maxJitter = MAX_JITTER,
 ): HoverAssessment {
   const jitter = std(window.map(magnitude));
@@ -56,11 +55,5 @@ export function assessHover(
     jitter <= maxJitter && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
-  if (ref) {
-    const off = leanDeg - ref.leanDeg.median;
-    const tol = routineSpec(routine).leanTolDeg;
-    if (off > tol) reasons.push('lean-too-much');
-    else if (off < -tol) reasons.push('lean-too-little');
-  }
   return { still, jitter, leanDeg, reasons };
 }
