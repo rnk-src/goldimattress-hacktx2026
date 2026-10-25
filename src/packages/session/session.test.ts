@@ -81,7 +81,8 @@ describe('createRepSession reps', () => {
     const events = run(session, synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], 22));
     const reps = events.flatMap((event) => (event.kind === 'rep' && event.result.ok ? [event.result] : []));
 
-    expect(reps[1]).toMatchObject({ restS: 20, restSkipped: false });
+    expect(reps[1]?.restSkipped).toBe(false);
+    expect(reps[1]?.restS).toBeGreaterThanOrEqual(20);
   });
 
   it('lets the user skip rest and records the skip on the next valid rep', () => {
@@ -99,7 +100,9 @@ describe('createRepSession reps', () => {
     const reps = events.flatMap((event) => (event.kind === 'rep' && event.result.ok ? [event.result] : []));
 
     expect(reps).toHaveLength(2);
-    expect(reps[1]).toMatchObject({ restS: 0, restSkipped: true });
+    expect(reps[1]?.restSkipped).toBe(true);
+    expect(reps[1]?.restS).toBeGreaterThan(0);
+    expect(reps[1]?.restS).toBeLessThan(20);
   });
 
   it('finishes after the goal of five accepted reps and then ignores samples', () => {
@@ -115,22 +118,46 @@ describe('createRepSession reps', () => {
     expect(session.push(stream.at(-1)!)).toEqual([]);
   });
 
-  it('honours a smaller goal', () => {
-    const session = createRepSession({ routine: 'sit-drop', goal: 2 });
-    const events = run(session, synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], 22));
-    expect(events.filter((e) => e.kind === 'rep')).toHaveLength(2);
-    expect(events.at(-1)?.kind).toBe('done');
+  it('does not let a caller lower the automatic goal below five usable reps', () => {
+    const options = { routine: 'sit-drop', goal: 2 } as Parameters<typeof createRepSession>[0];
+    const session = createRepSession(options);
+    const events = run(
+      session,
+      synthStream(Array.from({ length: 6 }, (_, index) => ({ seed: index + 1 })), 22),
+    );
+    expect(events.filter((event) => event.kind === 'rep')).toHaveLength(5);
+    expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'complete' });
   });
 
   it('lets the user finish at three usable reps with low confidence', () => {
     const session = createRepSession({ routine: 'sit-drop' });
-    run(session, synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }, { seed: 4 }], 22));
-
-    const events = session.finishNow();
+    let events: SessionEvent[] = [];
+    for (const sample of synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }, { seed: 4 }], 22)) {
+      const next = session.push(sample);
+      if (next.some((event) => event.kind === 'rep') && session.accepted === 3) {
+        events = session.finishNow();
+        break;
+      }
+    }
 
     expect(session.accepted).toBe(3);
     expect(events.at(-1)).toMatchObject({ kind: 'done', outcome: 'low-confidence' });
+    expect(cues(events).at(-1)?.text).toContain('low confidence');
     expect(session.state).toBe('done');
+  });
+
+  it('does not finish while an attempt is being captured', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const stream = synthStream(Array.from({ length: 5 }, (_, index) => ({ seed: index + 1 })), 22);
+    for (const sample of stream) {
+      session.push(sample);
+      if (session.accepted >= 3 && session.state === 'capturing') break;
+    }
+
+    expect(session.accepted).toBe(3);
+    expect(session.state).toBe('capturing');
+    expect(session.finishNow()).toEqual([]);
+    expect(session.state).toBe('capturing');
   });
 
   it('stops after ten attempts with a retry outcome when fewer than three are usable', () => {
