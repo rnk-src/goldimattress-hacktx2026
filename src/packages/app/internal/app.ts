@@ -1,6 +1,6 @@
 import type { Coach } from '../../coach';
 import type { Recording, RigSetup, Sample, Trace } from '../../domain';
-import { serializeRecording } from '../../sensors';
+import { RecordingFormatError, parseRig, serializeRecording } from '../../sensors';
 import type { Access } from '../../sensors';
 import { positionCue } from '../../session';
 import { DEFAULT_RIG, assessHover, createPositionTracker, routineSpec } from '../../signal';
@@ -165,6 +165,16 @@ function captureView(
   const routine = root.querySelector<HTMLSelectElement>('[name="routine"]');
   const rigFields = root.querySelector<HTMLElement>('[data-rig]');
   const rigInput = (name: string) => root.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${name}"]`)?.value ?? '';
+  /** The rig the form describes, or a message for the user. The file parser validates it. */
+  const readRig = (): { rig: RigSetup } | { error: string } => {
+    try {
+      const form = { massKg: Number(rigInput('massKg')), baseCm: DEFAULT_RIG.baseCm, dropHeightCm: Number(rigInput('dropHeightCm')), spot: rigInput('spot') };
+      return { rig: parseRig(form, 'rig') };
+    } catch (e) {
+      if (e instanceof RecordingFormatError) return { error: e.message };
+      throw e;
+    }
+  };
   const sampleRate = root.querySelector<HTMLElement>('[data-sample-rate]');
   const eventInterval = root.querySelector<HTMLElement>('[data-event-interval]');
   const progress = Array.from(root.querySelectorAll<HTMLElement>('[data-repetition-progress] li'));
@@ -187,16 +197,12 @@ function captureView(
   button?.addEventListener('click', () => {
     // shortcut: a rig-drop uses the sit-drop window and rest lengths; switch to the rig spec when the plate data shows they differ.
     const rigDrop = routine?.value === 'rig-drop';
-    // shortcut: a bad or empty number falls back to the default rig value with no error shown; add validation if people mistype.
-    const positive = (name: string, fallback: number) => (Number(rigInput(name)) > 0 ? Number(rigInput(name)) : fallback);
-    const rig: RigSetup | undefined = rigDrop
-      ? {
-          massKg: positive('massKg', DEFAULT_RIG.massKg),
-          baseCm: [...DEFAULT_RIG.baseCm],
-          dropHeightCm: positive('dropHeightCm', DEFAULT_RIG.dropHeightCm),
-          spot: rigInput('spot') as RigSetup['spot'],
-        }
-      : undefined;
+    const read = rigDrop ? readRig() : undefined;
+    if (read && 'error' in read) {
+      if (status) status.textContent = read.error;
+      return;
+    }
+    const rig = read?.rig;
     const traces: Trace[] = [];
     let activeSamples: Sample[] | undefined;
     let startedAt = '';
