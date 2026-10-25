@@ -40,6 +40,9 @@ const CUES: Record<CueKey, Cue> = {
   done: { key: 'done', text: 'All reps done.' },
 };
 
+/** The cue for a phone-position event from `createPositionTracker`. */
+export const positionCue = (event: 'off' | 'ok'): Cue => CUES[event === 'off' ? 'phone-off' : 'phone-ok'];
+
 export function createRepSession(opts: SessionOptions): RepSession {
   const spec = routineSpec(opts.routine);
   const goal = opts.goal ?? 5;
