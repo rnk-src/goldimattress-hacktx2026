@@ -22,6 +22,14 @@ describe('loadFixture', () => {
     expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
   });
 
+  it('reads the real thin-cushion chair recording as five sit-drops without the user agent', () => {
+    const rec = loadFixture('thin-cushion-chair-set1');
+    expect(rec.traces).toHaveLength(5);
+    expect(rec.traces.every((t) => t.routine === 'sit-drop')).toBe(true);
+    expect(rec.traces.every((t) => !t.device.includes('Mozilla'))).toBe(true);
+    expect(rec.traces.every((t) => t.samples[0]!.t === 0)).toBe(true);
+  });
+
   it('names the fixture when it does not exist', () => {
     expect(() => loadFixture('no-such-fixture')).toThrow(/no-such-fixture/);
   });
