@@ -47,7 +47,7 @@ describe('summarize', () => {
     expect(summarize(reps).features.peakOverV.center).toBeCloseTo((18 + 60 + 16) / 3.3);
   });
 
-  it('throws on zero total weight instead of returning NaN', () => {
+  it('throws when no rep is usable, such as all-zero weights, instead of returning NaN', () => {
     expect(() => summarize([rep(20, 0), rep(21, 0)])).toThrow(RangeError);
   });
 
