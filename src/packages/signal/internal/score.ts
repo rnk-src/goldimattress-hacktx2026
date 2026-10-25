@@ -2,20 +2,12 @@ import type { ReferenceStats, RejectReason } from '../../domain';
 
 /** Hover jitter scale used before a person has a reference, m/s²; twice this was the old hard limit. */
 const PRIOR_JITTER_SCALE = 0.225;
-/** Lean this far from the reference median costs nothing, then falls to zero over LEAN_FALL_DEG. */
-const LEAN_FREE_DEG = 10;
-const LEAN_FALL_DEG = 20;
-/** Impact speed within this share of the reference median costs nothing, then falls to zero over SPEED_FALL. */
-const SPEED_FREE = 0.3;
-const SPEED_FALL = 0.5;
 /** A first lobe longer than this means tensed legs smeared the impact, s. It falls to zero over CAUGHT_FALL_S. */
-export const CAUGHT_STOP_S = 0.6;
+const CAUGHT_STOP_S = 0.6;
 const CAUGHT_FALL_S = 0.3;
 
 export interface Measures {
   jitter: number;
-  leanDeg: number;
-  impactSpeed: number;
   stopTime: number;
 }
 
@@ -23,9 +15,10 @@ export interface Measures {
 const ramp = (excess: number, fall: number) => Math.min(1, Math.max(0, 1 - excess / fall));
 
 /**
- * Quality weight in 0..1 and the issues behind it. Each check costs a share of the weight; the weight is
- * their product. The weights are provisional until the human-error simulator and more people tune them.
- * shortcut: the ramps are guesses from two sets of one person, tune with the simulator and sloppy sets.
+ * Quality weight in 0..1 and the issues behind it, from how still the hover was and whether the legs caught
+ * the landing. Lean and impact speed are not scored here: they differ by surface, so only a person's own
+ * reps are compared on them (see `buildReference`).
+ * shortcut: the ramps are guesses from three sets of one person, tune with the simulator and sloppy sets.
  */
 export function scoreRep(m: Measures, ref?: ReferenceStats): { weight: number; issues: RejectReason[] } {
   const issues: RejectReason[] = [];
@@ -35,18 +28,7 @@ export function scoreRep(m: Measures, ref?: ReferenceStats): { weight: number; i
   };
   // A calm person is judged no stricter than the prior, so a still reference cannot make a normal hover unusable.
   const jitterScale = Math.max(ref?.jitterScale ?? 0, PRIOR_JITTER_SCALE);
-  let weight = factor(ramp(m.jitter - 2 * jitterScale, 2 * jitterScale), 'not-still');
-  if (ref) {
-    const lean = m.leanDeg - ref.leanDeg.median;
-    weight *= factor(
-      ramp(Math.abs(lean) - LEAN_FREE_DEG, LEAN_FALL_DEG),
-      lean > 0 ? 'lean-too-much' : 'lean-too-little',
-    );
-    if (ref.impactSpeed.median > 0) {
-      const speed = m.impactSpeed / ref.impactSpeed.median - 1;
-      weight *= factor(ramp(Math.abs(speed) - SPEED_FREE, SPEED_FALL), speed > 0 ? 'too-fast' : 'too-slow');
-    }
-  }
-  weight *= factor(ramp(m.stopTime - CAUGHT_STOP_S, CAUGHT_FALL_S), 'caught-landing');
-  return { weight, issues };
+  const still = factor(ramp(m.jitter - 2 * jitterScale, 2 * jitterScale), 'not-still');
+  const landing = factor(ramp(m.stopTime - CAUGHT_STOP_S, CAUGHT_FALL_S), 'caught-landing');
+  return { weight: still * landing, issues };
 }

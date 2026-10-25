@@ -38,7 +38,7 @@ describe('createRepSession hover coaching', () => {
   it('arms with a drop cue once the hover is still, then reports capturing at the drop', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{}]).slice(0, 55));
-    expect(keys(events)).toEqual(['place-phone', 'drop-when-ready']);
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready']);
     expect(session.state).toBe('armed');
     const drop = run(session, synthStream([{}]).slice(55, 100));
     expect(drop.filter((e) => e.kind === 'state')).toEqual([{ kind: 'state', state: 'capturing' }]);
@@ -52,7 +52,7 @@ describe('createRepSession reps', () => {
     const reps = events.flatMap((e) => (e.kind === 'rep' ? [e.result] : []));
     expect(reps[0]?.ok).toBe(true);
     expect(session.accepted).toBe(1);
-    expect(keys(events).slice(0, 4)).toEqual(['place-phone', 'drop-when-ready', 'captured', 'rep-accepted']);
+    expect(keys(events).slice(0, 5)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready', 'captured', 'rep-accepted']);
     const span = reps[0]!.trace.samples.at(-1)!.t - reps[0]!.trace.samples[0]!.t;
     expect(span).toBeGreaterThan(4.5);
     expect(span).toBeLessThan(5.5);
@@ -61,7 +61,7 @@ describe('createRepSession reps', () => {
   it('rests after a rep and ignores a drop that arrives during the rest', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{}, {}], 8));
-    expect(keys(events)).toEqual(['place-phone', 'drop-when-ready', 'captured', 'rep-accepted', 'rest', 'rest']);
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready', 'captured', 'rep-accepted', 'rest', 'rest']);
     expect(events.filter((e) => e.kind === 'rep')).toHaveLength(1);
     expect(session.accepted).toBe(1);
     expect(session.state).toBe('resting');
@@ -214,33 +214,54 @@ describe('createRepSession rejects', () => {
     expect(session.rejected).toBe(1);
     expect(session.accepted).toBe(0);
   });
+});
 
-  it('rejects a drop that is too fast for the reference', () => {
-    const session = createRepSession({ routine: 'sit-drop', ref: REF });
-    const events = run(session, synthStream([{ impactSpeed: 1.0 }, {}], 22));
-    const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('too-fast');
-    expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('too-fast'));
+/** A still hover at a given lean from the phone's y axis (upright on the sternum is 0 degrees), 60 Hz. */
+function hoverAt(leanDeg: number, fromT: number, seconds: number): Sample[] {
+  const rad = (leanDeg * Math.PI) / 180;
+  return Array.from({ length: Math.round(seconds * 60) }, (_, i) => ({
+    t: fromT + i / 60,
+    ax: 0,
+    ay: 9.81 * Math.cos(rad),
+    az: 9.81 * Math.sin(rad),
+  }));
+}
+
+describe('createRepSession phone position cue', () => {
+  it('asks to hold the phone against the breastbone when it lies flat, and does not arm', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, hoverAt(70, 0, 2));
+    expect(keys(events)).toContain('phone-off');
+    expect(cues(events).find((c) => c.key === 'phone-off')?.text).toContain('breastbone');
+    expect(keys(events)).not.toContain('drop-when-ready');
+    expect(session.state).toBe('holding');
+  });
+
+  it('confirms the position once when the phone is upright, then arms', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, hoverAt(30, 0, 2));
+    expect(keys(events)).toEqual(['place-phone', 'phone-ok', 'drop-when-ready']);
+  });
+
+  it('confirms again after the phone was off, and only once it is clearly back in range', () => {
+    const session = createRepSession({ routine: 'sit-drop' });
+    const events = run(session, [...hoverAt(60, 0, 1), ...hoverAt(53, 1, 1), ...hoverAt(45, 2, 1)]);
+    expect(keys(events)).toEqual(['place-phone', 'phone-off', 'phone-ok', 'drop-when-ready']);
   });
 });
 
-describe('createRepSession lean scoring', () => {
-  it('captures a lean mismatch and coaches from its first scoring issue', () => {
+describe('createRepSession lean coaching', () => {
+  it('does not ask to match the calibration lean, since another surface invites another lean', () => {
     const session = createRepSession({ routine: 'sit-drop', ref: REF });
-    const events = run(session, synthStream([{ leanDeg: 40, seed: 1 }, { seed: 1 }], 22));
-    const rep = events.find((event) => event.kind === 'rep');
-
-    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues[0]).toBe('lean-too-much');
-    expect(cues(events).find((cue) => cue.key === 'rep-rejected')?.text).toBe(rejectMessage('lean-too-much'));
+    const events = run(session, synthStream([{ leanDeg: 35 }]).slice(0, 90));
+    expect(keys(events)).not.toContain('lean-less');
+    expect(keys(events)).not.toContain('lean-more');
+    expect(session.state).not.toBe('holding');
   });
 });
 
 const REASONS: RejectReason[] = [
   'not-still',
-  'lean-too-much',
-  'lean-too-little',
-  'too-fast',
-  'too-slow',
   'caught-landing',
   'left-surface',
   'no-drop-found',
@@ -252,7 +273,5 @@ describe('rejectMessage', () => {
     const messages = REASONS.map(rejectMessage);
     expect(new Set(messages).size).toBe(REASONS.length);
     messages.forEach((m) => expect(m.length).toBeGreaterThan(0));
-    expect(rejectMessage('lean-too-much')).toBe('Lean a bit less.');
-    expect(rejectMessage('lean-too-little')).toBe('Lean a bit more.');
   });
 });
