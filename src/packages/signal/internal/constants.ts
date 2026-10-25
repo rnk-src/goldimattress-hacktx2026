@@ -1,0 +1,2 @@
+/** Standard gravity, m/s². The one value signal uses; testkit keeps its own so the generator stays independent. */
+export const GRAVITY = 9.81;
