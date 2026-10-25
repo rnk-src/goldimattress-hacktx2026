@@ -1,14 +1,7 @@
-import type { Person, Surface, TestRecord } from '../../domain';
 import { decodePerson, decodeTest, encodePerson, encodeTest } from './codec';
-import { readStored } from './migrate';
+import { readStored, readStoredState } from './migrate';
 import type { StoredData } from './migrate';
 import type { Store, StorageLike } from './types';
-
-interface Data {
-  people: Person[];
-  surfaces: Surface[];
-  tests: TestRecord[];
-}
 
 /** Thrown by a save when the browser's storage quota is used up. Nothing is written. */
 export class StoreFullError extends Error {
@@ -25,6 +18,7 @@ const isQuotaError = (e: unknown): boolean => {
 };
 
 const KEY = 'goldimattress';
+const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
 
 /** Replaces the entry with the same id in place, or appends. */
 function upsert<T extends { id: string }>(list: T[], item: T): void {
@@ -33,41 +27,47 @@ function upsert<T extends { id: string }>(list: T[], item: T): void {
   else list.push(item);
 }
 
+const isJson = (text: string): boolean => {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * Keeps everything in one storage value and rewrites it on each save.
  * shortcut: rewrite-all is fine for ~100 tests, split into per-test keys if saves get slow.
  */
 export function createLocalStore(storage: StorageLike = localStorage): Store {
-  const load = (): Data => {
-    const stored = readStored(storage.getItem(KEY));
-    return {
-      people: stored.people.map(decodePerson),
-      surfaces: stored.surfaces,
-      tests: stored.tests.map(decodeTest),
-    };
-  };
-  const save = (data: Data) => {
-    const stored: StoredData = {
-      version: 2,
-      people: data.people.map(encodePerson),
-      surfaces: data.surfaces,
-      tests: data.tests.map(encodeTest),
-    };
+  const load = (): StoredData => readStored(storage.getItem(KEY));
+  const save = (data: StoredData, corruptBackup?: string) => {
     try {
-      storage.setItem(KEY, JSON.stringify(stored));
+      if (corruptBackup !== undefined) {
+        try {
+          storage.setItem(CORRUPT_BACKUP_KEY, corruptBackup);
+        } catch (e) {
+          // Only text that is not JSON at all is expendable. Readable data from a newer app must not be overwritten unbacked.
+          if (isJson(corruptBackup)) throw e;
+        }
+      }
+      storage.setItem(KEY, JSON.stringify(data));
     } catch (e) {
       throw isQuotaError(e) ? new StoreFullError({ cause: e }) : e;
     }
   };
-  const change = async (edit: (data: Data) => void) => {
-    const data = load();
-    edit(data);
-    save(data);
+  // Edits the stored (encoded) form, so saving one record never decodes the traces of the others.
+  const change = async (edit: (data: StoredData) => void) => {
+    const raw = storage.getItem(KEY);
+    const loaded = readStoredState(raw);
+    edit(loaded.data);
+    save(loaded.data, loaded.corrupt ? raw! : undefined);
   };
 
   return {
-    listPeople: async () => load().people,
-    savePerson: (p) => change((d) => upsert(d.people, p)),
+    listPeople: async () => load().people.map(decodePerson),
+    savePerson: (p) => change((d) => upsert(d.people, encodePerson(p))),
     findSurfaces: async (prefix) => {
       const p = prefix.toLowerCase();
       return load()
@@ -75,7 +75,7 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
         .reverse();
     },
     saveSurface: (s) => change((d) => upsert(d.surfaces, s)),
-    saveTest: (t) => change((d) => upsert(d.tests, t)),
+    saveTest: (t) => change((d) => upsert(d.tests, encodeTest(t))),
     listTests: async (filter = {}) =>
       load()
         .tests.filter(
@@ -83,6 +83,7 @@ export function createLocalStore(storage: StorageLike = localStorage): Store {
             (filter.personId === undefined || t.personId === filter.personId) &&
             (filter.surfaceId === undefined || t.surfaceId === filter.surfaceId),
         )
-        .reverse(),
+        .reverse()
+        .map(decodeTest),
   };
 }

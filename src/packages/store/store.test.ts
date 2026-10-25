@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Person, RepResult, Surface, TestRecord, Trace, Verdict } from '../domain';
 import { memoryStorage, synthRep } from '../testkit';
 import { StoreFullError, createLocalStore } from './index';
@@ -195,6 +195,18 @@ describe('trace encoding', () => {
     expect(written).not.toContain('"ax"');
     expect(written.length).toBeLessThan(trace.samples.length * 16 * 2);
   });
+
+  it('does not decode stored traces when saving another record', async () => {
+    const storage = memoryStorage();
+    const trace = synthRep({ seed: 6 });
+    const store = createLocalStore(storage);
+    await store.saveTest({ ...record('t1', 'p1', 's1'), reps: [accepted(trace)] });
+    const decode = vi.spyOn(globalThis, 'atob');
+
+    await store.saveSurface(surface('s2', 'New couch'));
+
+    expect(decode).not.toHaveBeenCalled();
+  });
 });
 
 describe('capacity', () => {
@@ -249,6 +261,7 @@ describe('capacity', () => {
 
 describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
+  const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
   const features = { peak: 12, peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
   it('stamps what it writes with schema version 2', async () => {
@@ -339,4 +352,78 @@ describe('schema versioning and bad data', () => {
       expect(await store.listPeople()).toEqual([person('p1')]);
     },
   );
+
+  it('backs up corrupt data before a save replaces it', async () => {
+    const storage = memoryStorage();
+    const corrupt = '{not json';
+    storage.setItem(KEY, corrupt);
+
+    await createLocalStore(storage).savePerson(person('p1'));
+
+    expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(corrupt);
+  });
+
+  it('refuses to overwrite readable newer data when its backup does not fit', async () => {
+    const memory = memoryStorage();
+    const newer = JSON.stringify({ version: 3, people: [], surfaces: [], tests: [] });
+    memory.setItem(KEY, newer);
+    const storage = {
+      ...memory,
+      setItem: (key: string, value: string) => {
+        if (key === CORRUPT_BACKUP_KEY) throw new DOMException('Storage is full', 'QuotaExceededError');
+        memory.setItem(key, value);
+      },
+    };
+
+    await expect(createLocalStore(storage).savePerson(person('p1'))).rejects.toBeInstanceOf(StoreFullError);
+
+    expect(memory.getItem(KEY)).toBe(newer);
+  });
+
+  it.each([
+    ['a v0 person without references', JSON.stringify({ people: [{ id: 'x' }], surfaces: [], tests: [] })],
+    [
+      'a v0 reference without stats',
+      JSON.stringify({
+        people: [{ id: 'x', name: 'A', references: { 'sit-drop': { reps: [] } } }],
+        surfaces: [],
+        tests: [],
+      }),
+    ],
+    [
+      'a v2 reference without stats',
+      JSON.stringify({
+        version: 2,
+        people: [{ id: 'x', name: 'A', references: { 'sit-drop': { reps: [] } } }],
+        surfaces: [],
+        tests: [],
+      }),
+    ],
+  ])('reads %s as empty, backs it up and lets the next save through', async (_name, bad) => {
+    const storage = memoryStorage();
+    storage.setItem(KEY, bad);
+    const store = createLocalStore(storage);
+
+    expect(await store.listPeople()).toEqual([]);
+    await store.savePerson(person('p1'));
+
+    expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(bad);
+    expect(await store.listPeople()).toEqual([person('p1')]);
+  });
+
+  it('still saves when the corrupt-data backup does not fit', async () => {
+    const memory = memoryStorage();
+    memory.setItem(KEY, '{not json');
+    const storage = {
+      ...memory,
+      setItem: (key: string, value: string) => {
+        if (key === CORRUPT_BACKUP_KEY) throw new DOMException('Storage is full', 'QuotaExceededError');
+        memory.setItem(key, value);
+      },
+    };
+
+    await createLocalStore(storage).savePerson(person('p1'));
+
+    expect(await createLocalStore(memory).listPeople()).toEqual([person('p1')]);
+  });
 });
