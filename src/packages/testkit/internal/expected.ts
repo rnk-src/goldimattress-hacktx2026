@@ -21,7 +21,7 @@ function bisect(f: (t: number) => number, lo: number, hi: number): number {
  */
 export function expectedFeatures(opts: SynthOptions = {}): RepFeatures {
   // shortcut: the answer is for a clean rep. It ignores `failure`, as it did before the rig.
-  const { impactSpeed: v } = descentOf(opts);
+  const { impactSpeed: v } = descentOf({ ...opts, failure: 'none' });
   const bounceHz = opts.bounceHz ?? DEFAULTS.bounceHz;
   const bounceRatio = opts.bounceRatio ?? DEFAULTS.bounceRatio;
   assertSurfaceStaysInContact(v, bounceHz, bounceRatio);

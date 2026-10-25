@@ -111,7 +111,9 @@ export function descentOf(opts: SynthOptions): { dropS: number; impactSpeed: num
   const metres = ((opts.dropHeightCm ?? RIG_HEIGHT_CM) * scale) / 100;
   // shortcut: a rig fall is one constant |a| (0 g, or the hand-drag value). Real hands add release noise.
   // |a| = m·g during the fall, so the net acceleration is g(1 − m).
-  const net = GRAVITY * (failure === 'hand-drag' ? 1 - (opts.failureSize ?? 0.3) : 1);
+  const drag = failure === 'hand-drag' ? (opts.failureSize ?? 0.3) : 0;
+  if (!(drag >= 0 && drag < 1)) throw new RangeError('hand-drag failureSize must be in [0, 1)');
+  const net = GRAVITY * (1 - drag);
   const dropS = Math.sqrt((2 * metres) / net);
   return { dropS, impactSpeed: net * dropS };
 }
