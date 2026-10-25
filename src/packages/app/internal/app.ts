@@ -4,6 +4,7 @@ import { serializeRecording } from '../../sensors';
 import type { Access } from '../../sensors';
 import { routineSpec } from '../../signal';
 import { calibrateView } from './calibrate';
+import { shortDeviceModel, withRepMetadata } from './metadata';
 import { mountProfileScreen } from './profile';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
@@ -22,17 +23,6 @@ const READY_S = 10;
 const REPS = 5;
 /** The last seconds before a window opens that each get a beep. */
 const COUNT_IN_BEEPS = 3;
-
-function shortDeviceModel(value: string): string {
-  const device = value.trim();
-  if (/iPhone/i.test(device)) return 'iPhone';
-  if (/iPad/i.test(device)) return 'iPad';
-  const androidModel = device.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/[^;)]+)?[;)]/i)?.[1]?.trim();
-  if (androidModel) return androidModel;
-  if (/Android/i.test(device)) return 'Android phone';
-  if (/Mozilla\//i.test(device)) return 'Web browser';
-  return device.slice(0, 40) || 'Unknown device';
-}
 const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS + LATE_DROP_MARGIN_S;
 const REST_S = CAPTURE_SPEC.restS;
 
@@ -366,6 +356,7 @@ function profileView(root: HTMLElement, deps: AppDeps): () => void {
 }
 
 export function startApp(root: HTMLElement, deps: AppDeps): () => void {
+  const appDeps = { ...deps, store: withRepMetadata(deps.store, deps.device, deps.now) };
   root.classList.add('app-root');
   let coach: Coach | undefined;
   let renderedRoute = '';
@@ -391,10 +382,10 @@ export function startApp(root: HTMLElement, deps: AppDeps): () => void {
     leaveRoute = undefined;
     clearTimers();
     renderedRoute = route;
-    if (route === '#/capture') leaveRoute = captureView(root, deps, getCoach, later);
-    else if (route === '#/calibrate') leaveRoute = calibrateView(root, deps, getCoach);
-    else if (route === '#/profile') leaveRoute = profileView(root, deps);
-    else permissionView(root, deps, getCoach);
+    if (route === '#/capture') leaveRoute = captureView(root, appDeps, getCoach, later);
+    else if (route === '#/calibrate') leaveRoute = calibrateView(root, appDeps, getCoach);
+    else if (route === '#/profile') leaveRoute = profileView(root, appDeps);
+    else permissionView(root, appDeps, getCoach);
   };
 
   window.addEventListener('hashchange', render);
