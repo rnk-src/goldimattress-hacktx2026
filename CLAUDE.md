@@ -101,13 +101,14 @@ The same person calibrates and tests, so the protocol must make the body act the
 
 ### Checks the app runs on every rep
 People are not perfect for five whole reps. The app scores each rep instead of passing or failing it. Provisional numbers are tuned with the human-error simulator and real data.
-- **Invalid (dropped, never scored)**: `no-drop-found`, `left-surface`, `low-sample-rate`, and no still hover (jitter above a high ceiling).
+- **Invalid (dropped, never scored)**: `no-drop-found` (including an impact speed below 0.2 m/s, which is not a real drop), `left-surface`, `low-sample-rate`, and no still hover (jitter above a high ceiling).
 - **Scored (weight 0 to 1)**: hover jitter and caught landing. Each lowers the weight smoothly. A rep with weight ≥ 0.5 is *usable*.
 - **Covariates**: record lean, impact speed, rest length and whether the rest was skipped on every rep.
 - **Jitter is per person**: the first 2 reps use a global prior. After that the scale is the median jitter of the person's valid reps. The reference stores it and tests reuse it.
 - **Lean and speed are not scored against the reference.** They differ by surface, and a penalty made most reps on a new surface unusable. Calibration drops a rep whose lean or speed is far from the person's own other reps (the outlier rule below). A test median is robust to one odd rep. A lean difference from calibration becomes a verdict caveat.
 - **Speed**: `peak_over_v` already divides by speed.
-- **No lean coaching during the hover.** The user is not asked to match the calibration lean.
+- **No lean matching.** The user is not asked to match the calibration lean.
+- **Phone position cue (absolute).** In a sit-drop the phone must ride upright on the sternum. If the hover angle from the phone's upright axis passes 55° (provisional: valid sets measured 2 to 44°, flat phones 58 to 78°), the app says to hold it against the breastbone. It confirms once the angle is back inside by 5°. The capture screen shows the live angle and plays the same cues outside the drop windows. The check is off for the bridge drop until there is data.
 - Every dropped or low-weight rep shows a short fix message ("lean a bit less", "hold still").
 
 ### Rep session rules
