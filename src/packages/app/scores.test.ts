@@ -3,7 +3,7 @@ import type { Trace } from '../domain';
 import { DEFAULT_RIG } from '../signal';
 import { synthRep } from '../testkit';
 import type { SynthOptions } from '../testkit';
-import { scoreRigDrops } from './index';
+import { confidenceLine, scoreRigDrops, scoresHtml } from './index';
 
 const rig = { ...DEFAULT_RIG, baseCm: [17.5, 9] as [number, number] };
 
@@ -48,23 +48,40 @@ describe('scoreRigDrops', () => {
 
     expect(report.hardness).not.toBeNull();
     expect(report.springiness).toBeNull();
-    expect(report.notes.join(' ')).toContain('rebound');
+    expect(report.notes.join(' ')).toContain('No clear rebound');
   });
 
-  it('gives no scores at all with fewer than three valid drops', () => {
-    const report = scoreRigDrops(drops(2, { bounceHz: 1.5, bounceRatio: 0.2 }));
+  it.each([1, 2])('gives a provisional score from just %i real drop(s)', (count) => {
+    const report = scoreRigDrops(drops(count, { bounceHz: 1.5, bounceRatio: 0.2 }));
+
+    expect(report.hardness).not.toBeNull();
+    expect(report.confidence).toBe('provisional');
+    expect(report.validDrops).toBe(count);
+    expect(confidenceLine(report)).toContain('provisional');
+  });
+
+  it('shows N/A with the reason, and never a number, when no drop has a usable impact', () => {
+    const report = scoreRigDrops(drops(3, { bounceHz: 1.5, bounceRatio: 0.2, failure: 'left-surface' }));
 
     expect(report.hardness).toBeNull();
     expect(report.springiness).toBeNull();
     expect(report.confidence).toBe('insufficient');
-    expect(report.validDrops).toBe(2);
+    expect(report.notes.join(' ')).toContain('No usable impact');
+    expect(scoresHtml(report)).toContain('Hardness score: N/A');
+    expect(scoresHtml(report)).not.toMatch(/Hardness score: \d/);
   });
 
-  it('excludes a drop with a gap in the samples, and says so', () => {
+  it('shows the placeholder before anything is recorded', () => {
+    expect(scoresHtml()).toContain('Hardness score: -- / 100');
+    expect(scoresHtml()).toContain('Springiness score: -- / 100');
+  });
+
+  it('excludes a drop with a gap in the samples around the impact, and says so', () => {
     const traces = drops(5, { bounceHz: 1.5, bounceRatio: 0.2 });
     const gappy = traces[2]!;
-    const impact = Math.floor(gappy.samples.length / 2);
-    traces[2] = { ...gappy, samples: [...gappy.samples.slice(0, impact), ...gappy.samples.slice(impact + 8)] };
+    const mags = gappy.samples.map((s) => Math.hypot(s.ax, s.ay, s.az));
+    const impact = mags.indexOf(Math.max(...mags));
+    traces[2] = { ...gappy, samples: [...gappy.samples.slice(0, impact + 2), ...gappy.samples.slice(impact + 12)] };
 
     const report = scoreRigDrops(traces);
 
@@ -73,17 +90,30 @@ describe('scoreRigDrops', () => {
     expect(report.notes.join(' ')).toContain('gap');
   });
 
-  it('excludes a drop whose peak looks clipped (a flat top at the sensor limit)', () => {
+  it('keeps a drop whose samples have a gap far from the impact', () => {
+    const traces = drops(5, { bounceHz: 1.5, bounceRatio: 0.2 });
+    const early = traces[2]!;
+    traces[2] = { ...early, samples: [...early.samples.slice(0, 20), ...early.samples.slice(30)] };
+
+    const report = scoreRigDrops(traces);
+
+    expect(report.validDrops).toBe(5);
+  });
+
+  it('keeps a drop whose peak looks clipped, but warns and lowers the confidence', () => {
     const traces = drops(5, { bounceHz: 1.5, bounceRatio: 0.2 });
     const clipped = traces[1]!;
-    const peakIndex = clipped.samples.reduce((best, s, i, all) => (Math.hypot(s.ax, s.ay, s.az) > Math.hypot(all[best]!.ax, all[best]!.ay, all[best]!.az) ? i : best), 0);
+    const mags = clipped.samples.map((s) => Math.hypot(s.ax, s.ay, s.az));
+    const peakIndex = mags.indexOf(Math.max(...mags));
     const top = clipped.samples[peakIndex]!;
     const samples = clipped.samples.map((s, i) => (i >= peakIndex - 1 && i <= peakIndex + 2 ? { ...top, t: s.t } : s));
     traces[1] = { ...clipped, samples };
 
     const report = scoreRigDrops(traces);
 
-    expect(report.validDrops).toBe(4);
+    expect(report.validDrops).toBe(5);
+    expect(report.hardness).not.toBeNull();
+    expect(report.confidence).toBe('low');
     expect(report.notes.join(' ')).toContain('clipped');
   });
 

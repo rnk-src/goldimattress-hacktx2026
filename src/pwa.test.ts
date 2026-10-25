@@ -138,6 +138,19 @@ describe('service worker', () => {
     expect(await (event.result as { text: () => Promise<string> }).text()).toBe('new');
   });
 
+  it('asks the server whether the page changed, so the browser HTTP cache cannot serve an old deploy', async () => {
+    const modes: (string | undefined)[] = [];
+    const worker = loadWorker(async (url, init) => {
+      if (url.endsWith('/app/')) modes.push(init?.cache);
+      return ok(url.endsWith('index.html') ? INDEX : 'page');
+    });
+    await worker.dispatch('install', {});
+
+    await worker.dispatch('fetch', { request: { method: 'GET', url: 'https://example.github.io/app/', mode: 'navigate' } });
+
+    expect(modes).toEqual(['no-cache']);
+  });
+
   it('shows the stored page when the network is slower than three seconds', async () => {
     vi.useFakeTimers();
     let slow = false;

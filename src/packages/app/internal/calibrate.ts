@@ -4,6 +4,7 @@ import { GOAL_REPS, MIN_REPS, rejectMessage } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
 import { PLACEMENT } from './placement';
 import { personRig, rigSummary } from './rig';
+import { scoreRigDrops, scoresHtml } from './scores';
 import { routinePickerHtml, wireRoutinePicker } from './routines';
 import { createRepRun } from './rep-run';
 import { brandHeader } from './shell';
@@ -228,7 +229,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       }
       result.hidden = false;
       result.innerHTML = built.ok
-        ? `<p>${accepted} accepted reps${outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<p data-save-status role="status">${saveStatus}</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
+        ? `<p>${accepted} accepted reps${outcome === 'low-confidence' ? ' — low confidence' : ''}</p>${droppedNote(built.dropped.length)}<p data-save-status role="status">${saveStatus}</p>${runRoutine === 'rig-drop' ? scoresHtml(scoreRigDrops(reps.map((rep) => rep.trace))) : ''}<dl>${(Object.keys(built.ref.features) as FeatureName[])
             .map(
               (name) =>
                 `<div><dt>${name}</dt><dd>${built.ref.features[name].center.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,

@@ -170,7 +170,7 @@ export interface RigScoreSummary {
   /** 0 to 100, or null when the drops could not support a score. */
   hardness: number | null;
   springiness: number | null;
-  confidence: 'high' | 'medium' | 'low' | 'insufficient';
+  confidence: 'high' | 'medium' | 'low' | 'provisional' | 'insufficient';
   validDrops: number;
   totalDrops: number;
   spreadPct: number | null;
