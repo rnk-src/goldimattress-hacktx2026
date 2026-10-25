@@ -1,5 +1,5 @@
 import type { Coach } from '../../coach';
-import type { FeatureName, Routine } from '../../domain';
+import type { FeatureName, Person, Routine } from '../../domain';
 import { createRepSession, rejectMessage } from '../../session';
 import type { RepSession, SessionEvent } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
@@ -43,6 +43,9 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
             ${(Object.keys(PLACEMENT) as Routine[]).map((r) => `<option value="${r}">${PLACEMENT[r].label}</option>`).join('')}
           </select>
         </label>
+        <label data-profile-control hidden>Profile
+          <select name="person"></select>
+        </label>
         <section data-placement aria-label="Phone placement"></section>
         <p data-cue-text class="cue-panel__text" role="status" aria-live="polite"></p>
         <p data-rep-feedback role="status" aria-live="polite"></p>
@@ -51,21 +54,54 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         </ol>
         <ul data-rejected-reps aria-label="Rejected reps"></ul>
         <button class="button button--primary" type="button" data-action="start-calibration">Start calibration</button>
+        <button class="button button--quiet" type="button" data-action="finish-calibration" hidden disabled>Finish with 3 reps</button>
+        <p data-profile-prompt role="status">Loading profiles…</p>
         <section data-calibration-result aria-label="Calibration result" hidden></section>
       </main>
     </div>
   `;
   const routineSelect = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+  const profileControl = root.querySelector<HTMLElement>('[data-profile-control]')!;
+  const profileSelect = root.querySelector<HTMLSelectElement>('select[name="person"]')!;
   const placement = root.querySelector<HTMLElement>('[data-placement]')!;
   const cueText = root.querySelector<HTMLElement>('[data-cue-text]')!;
   const feedback = root.querySelector<HTMLElement>('[data-rep-feedback]')!;
   const dots = Array.from(root.querySelectorAll<HTMLElement>('[data-rep-dots] li'));
   const rejectedList = root.querySelector<HTMLElement>('[data-rejected-reps]')!;
   const button = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
+  const finishButton = root.querySelector<HTMLButtonElement>('[data-action="finish-calibration"]')!;
+  const profilePrompt = root.querySelector<HTMLElement>('[data-profile-prompt]')!;
   const result = root.querySelector<HTMLElement>('[data-calibration-result]')!;
   let running = false;
   let mounted = true;
   let session: RepSession | undefined;
+  let profiles: Person[] = [];
+  let selectedPerson: Person | undefined;
+
+  void deps.store.listPeople().then((people) => {
+    if (!mounted) return;
+    profiles = people;
+    selectedPerson = people[0];
+    if (selectedPerson) {
+      profileSelect.replaceChildren(
+        ...people.map((person) => {
+          const option = document.createElement('option');
+          option.value = person.id;
+          option.textContent = person.name;
+          return option;
+        }),
+      );
+      profileControl.hidden = false;
+      profilePrompt.textContent = `Calibrating for ${selectedPerson.name}`;
+    } else {
+      button.disabled = true;
+      profilePrompt.innerHTML = 'Create a profile before calibrating. <a href="#/profile">Create a profile</a>';
+    }
+  });
+  profileSelect.addEventListener('change', () => {
+    selectedPerson = profiles.find((person) => person.id === profileSelect.value);
+    if (selectedPerson) profilePrompt.textContent = `Calibrating for ${selectedPerson.name}`;
+  });
 
   const routine = () => routineSelect.value as Routine;
   const showPlacement = () => {
@@ -76,6 +112,8 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     result.hidden = true;
     rejectedList.replaceChildren();
     feedback.textContent = '';
+    finishButton.hidden = true;
+    finishButton.disabled = true;
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
   };
   showPlacement();
@@ -86,7 +124,10 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
 
   const finish = () => {
     button.disabled = false;
+    finishButton.hidden = true;
+    finishButton.disabled = true;
     routineSelect.disabled = false;
+    profileSelect.disabled = false;
     running = false;
     deps.source.stop();
     void getCoach().keepAwake(false);
@@ -102,6 +143,10 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       } else if (event.kind === 'rep') {
         if (isUsable(event.result)) {
           dots[(session?.accepted ?? 1) - 1]?.setAttribute('data-state', 'accepted');
+          if ((session?.accepted ?? 0) >= 3) {
+            finishButton.hidden = false;
+            finishButton.disabled = false;
+          }
         } else {
           const item = document.createElement('li');
           item.textContent = rejectMessage((event.result.ok ? event.result.issues : event.result.reasons)[0]!);
@@ -111,9 +156,18 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         finish();
         const built = buildReference(event.reps, routine());
         const accepted = event.reps.filter(isUsable).length;
+        if (built.ok && selectedPerson) {
+          const person = selectedPerson;
+          const currentRoutine = routine();
+          person.references[currentRoutine] = {
+            stats: { ...built.ref, createdAt: deps.now().toISOString() },
+            reps: event.reps,
+          };
+          void deps.store.savePerson(person);
+        }
         result.hidden = false;
         result.innerHTML = built.ok
-          ? `<p>${accepted} accepted reps</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
+          ? `<p>${accepted} accepted reps${event.outcome === 'low-confidence' ? ' — low confidence' : ''}</p><dl>${(Object.keys(built.ref.features) as FeatureName[])
               .map(
                 (name) =>
                   `<div><dt>${name}</dt><dd>${built.ref.features[name].median.toFixed(3)} ${FEATURE_UNITS[name]}</dd></div>`,
@@ -143,11 +197,16 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       return;
     }
     routineSelect.disabled = true;
+    profileSelect.disabled = true;
     clearProgress();
     session = createRepSession({ routine: routine() });
     running = true;
     void coach.keepAwake(true);
     deps.source.start((sample) => show(session!.push(sample)));
+  });
+
+  finishButton.addEventListener('click', () => {
+    if (session) show(session.finishNow());
   });
 
   return () => {

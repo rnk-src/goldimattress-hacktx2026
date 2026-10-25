@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Coach } from '../coach';
-import type { Cue, Routine, Sample, Trace } from '../domain';
+import type { Cue, Person, Routine, Sample, Trace } from '../domain';
 import { createReplaySource } from '../sensors';
 import type { SensorSource } from '../sensors';
 import { rejectMessage } from '../session';
 import { routineSpec } from '../signal';
 import { createLocalStore } from '../store';
+import type { Store } from '../store';
 import { memoryStorage, synthStream } from '../testkit';
 import type { SynthOptions } from '../testkit';
 import { startApp } from './index';
@@ -34,7 +35,13 @@ interface Harness {
   stop: () => void;
 }
 
-function mount(source: SensorSource, hash = '#/calibrate'): Harness {
+function storeWithPerson(): Store {
+  const store = createLocalStore(memoryStorage());
+  void store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+  return store;
+}
+
+function mount(source: SensorSource, hash = '#/calibrate', store: Store = storeWithPerson()): Harness {
   const cues: Cue[] = [];
   const awake: boolean[] = [];
   const coach: Coach = {
@@ -51,7 +58,7 @@ function mount(source: SensorSource, hash = '#/calibrate'): Harness {
   window.location.hash = hash;
   const stop = startApp(root, {
     source,
-    store: createLocalStore(memoryStorage()),
+    store,
     makeCoach: () => coach,
     now: () => new Date('2026-10-24T16:00:00.000Z'),
     device: 'Replay phone',
@@ -65,6 +72,91 @@ const flush = async () => {
 };
 
 describe('calibrate screen', () => {
+  it('blocks calibration and links to profile creation when nobody is selected', async () => {
+    const { root } = mount(createReplaySource(traceOf([])), '#/calibrate', createLocalStore(memoryStorage()));
+    await flush();
+
+    expect(root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.disabled).toBe(true);
+    expect(root.querySelector('[data-profile-prompt]')?.textContent).toContain('Create a profile');
+    expect(root.querySelector('a[href="#/profile"]')).not.toBeNull();
+  });
+
+  it('saves a five-usable-rep sit-drop reference with raw traces and metadata', async () => {
+    const store = createLocalStore(memoryStorage());
+    const person: Person = { id: 'person-1', name: 'Alex', references: {} };
+    await store.savePerson(person);
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    const reference = saved?.references['sit-drop'];
+    expect(reference?.stats.repCount).toBe(5);
+    expect(reference?.reps).toHaveLength(5);
+    expect(reference?.reps.every((rep) => rep.trace.samples.length > 0)).toBe(true);
+    expect(reference?.reps.every((rep) => rep.trace.device === 'Replay phone')).toBe(true);
+    expect(reference?.reps.every((rep) => rep.trace.startedAt !== '')).toBe(true);
+  });
+
+  it('saves calibration to the profile selected by the user', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    await store.savePerson({ id: 'person-2', name: 'Sam', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+    const profile = root.querySelector<HTMLSelectElement>('select[name="person"]')!;
+    profile.value = 'person-2';
+    profile.dispatchEvent(new Event('change'));
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const people = await store.listPeople();
+    expect(people.find((person) => person.id === 'person-1')?.references['sit-drop']).toBeUndefined();
+    expect(people.find((person) => person.id === 'person-2')?.references['sit-drop']?.stats.repCount).toBe(5);
+  });
+
+  it('lets the user finish at three usable reps and saves a low-confidence reference', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const samples = synthStream([{ seed: 1 }, { seed: 2 }, { seed: 3 }], REST_S);
+    const last = samples.at(-1)!;
+    for (let i = 1; i <= 300; i += 1) samples.push({ ...last, t: last.t + i / 60 });
+    const { root } = mount(createReplaySource(traceOf(samples)), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+    const finish = root.querySelector<HTMLButtonElement>('[data-action="finish-calibration"]');
+    expect(finish?.disabled).toBe(false);
+    finish?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    expect(saved?.references['sit-drop']?.stats.repCount).toBe(3);
+    expect(root.querySelector('[data-calibration-result]')?.textContent).toContain('low confidence');
+  });
+
+  it("drops one statistical outlier automatically and explains it without asking for a redo", async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const stream = goodStream([{ bounceHz: 8, seed: 9 }], 5);
+    const { root } = mount(createReplaySource(traceOf(stream)), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    const [saved] = await store.listPeople();
+    expect(saved?.references['sit-drop']?.stats.repCount).toBe(4);
+    expect(root.querySelector('[data-calibration-result]')?.textContent).toContain(
+      "dropped 1 rep that didn't match the others",
+    );
+    expect(root.querySelector('[data-calibration-result]')?.textContent).not.toContain('redo');
+  });
+
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
     const { root, cues } = mount(createReplaySource(traceOf(goodStream([]))));
     expect(root.textContent).toContain('sternum');
