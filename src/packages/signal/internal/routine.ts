@@ -1,6 +1,6 @@
 import type { Routine, RoutineSpec } from '../../domain';
 
-const BASE = { hoverMinS: 0.3, preRollS: 1.0, restS: 20, leanTolDeg: 5, speedTol: 0.2 };
+const BASE = { hoverMinS: 0.3, preRollS: 1.0, restS: 20, leanTolDeg: 5 };
 
 const SPECS: Record<Routine, Readonly<RoutineSpec>> = {
   'sit-drop': Object.freeze({ ...BASE, captureS: 4 }),

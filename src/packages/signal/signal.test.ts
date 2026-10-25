@@ -31,7 +31,6 @@ describe('routineSpec', () => {
     expect(spec.hoverMinS).toBeGreaterThanOrEqual(0.3);
     expect(spec.restS).toBe(20);
     expect(spec.leanTolDeg).toBe(5);
-    expect(spec.speedTol).toBe(0.2);
   });
 
   it('gives the bridge drop a longer capture than the sit-drop', () => {
