@@ -115,7 +115,7 @@ describe('createRepSession rejects', () => {
     const session = createRepSession({ routine: 'sit-drop' });
     const events = run(session, synthStream([{ failure: 'caught-landing' }, {}], 22));
     const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && !rep.result.ok && rep.result.reasons).toContain('caught-landing');
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('caught-landing');
     expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('caught-landing'));
     expect(session.rejected).toBe(1);
     expect(session.accepted).toBe(0);
@@ -125,7 +125,7 @@ describe('createRepSession rejects', () => {
     const session = createRepSession({ routine: 'sit-drop', ref: REF });
     const events = run(session, synthStream([{ impactSpeed: 1.0 }, {}], 22));
     const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && !rep.result.ok && rep.result.reasons).toContain('too-fast');
+    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('too-fast');
     expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('too-fast'));
   });
 });

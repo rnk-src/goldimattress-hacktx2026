@@ -10,7 +10,7 @@ const SPEED_FREE = 0.3;
 const SPEED_FALL = 0.5;
 /** A first lobe longer than this means tensed legs smeared the impact, s. It falls to zero over CAUGHT_FALL_S. */
 export const CAUGHT_STOP_S = 0.6;
-const CAUGHT_FALL_S = 0.6;
+const CAUGHT_FALL_S = 0.3;
 
 export interface Measures {
   jitter: number;
