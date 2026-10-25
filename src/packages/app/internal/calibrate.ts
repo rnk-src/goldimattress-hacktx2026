@@ -30,8 +30,6 @@ const FEATURE_UNITS: Record<FeatureName, string> = {
 
 const BUILD_FAILURE = {
   'too-few': 'Too few accepted reps.',
-  'speed-spread': 'Your drop speed varied too much between reps.',
-  'lean-spread': 'Your lean varied too much between reps.',
 } as const;
 
 export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach): () => void {

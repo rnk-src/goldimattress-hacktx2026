@@ -24,12 +24,12 @@ const stats = (xs: readonly number[], ws: readonly number[]): FeatureStats => {
 /** How many scaled MADs the rep's farthest feature sits from the median, floored like the verdict. */
 function outlierScore(rep: OkRep, kept: readonly OkRep[]): number {
   return Math.max(
-    ...FEATURES.map(({ name }) => {
+    ...FEATURES.map(({ name, absFloor }) => {
       const s = stats(
         kept.map((r) => r.features[name]),
         kept.map((r) => r.weight),
       );
-      return Math.abs(rep.features[name] - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), 1e-9);
+      return Math.abs(rep.features[name] - s.median) / Math.max(s.mad, REL_FLOOR * Math.abs(s.median), absFloor);
     }),
   );
 }

@@ -285,6 +285,19 @@ describe('analyzeRep scoring', () => {
     expect(rep.issues).toContain('not-still');
   });
 
+  it('never judges the jitter stricter than the global prior, even for a still reference person', () => {
+    const trace = synthRep({ failure: 'moving-hover', failureSize: 0.4 });
+    const still = scored(trace, { ...ref(), jitterScale: 0 });
+    expect(Number.isFinite(still.weight)).toBe(true);
+    expect(still.weight).toBe(scored(trace, { ...ref(), jitterScale: 0.225 }).weight);
+  });
+
+  it('ignores the impact speed when the reference speed is not positive', () => {
+    const rep = scored(synthRep({ impactSpeed: 1.0 }), { ...ref(), impactSpeed: { median: 0, mad: 0 } });
+    expect(Number.isFinite(rep.weight)).toBe(true);
+    expect(rep.issues).not.toContain('too-fast');
+  });
+
   it('judges the hover jitter against the reference person own jitter scale', () => {
     const trace = synthRep({ failure: 'moving-hover', failureSize: 0.8, hoverS: 2, durationS: 6 });
     const strict = scored(trace, { ...ref(), jitterScale: 0.05 });

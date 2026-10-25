@@ -280,13 +280,31 @@ describe('schema versioning and bad data', () => {
     expect(await store.listTests()).toHaveLength(1);
   });
 
-  it('gives reps saved before weights existed a full weight', async () => {
+  it('drops a reference saved with the old mean and std shape and keeps the person', async () => {
+    const storage = memoryStorage();
+    const oldStats = { mean: 1, std: 0.1 };
+    const old = {
+      routine: 'sit-drop',
+      repCount: 5,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      features: { peakOverV: oldStats, stopTime: oldStats, bounceRatio: oldStats, settleTime: oldStats },
+      leanDeg: oldStats,
+      impactSpeed: oldStats,
+    };
+    const stored = { ...person('p1', 'Ana'), references: { 'sit-drop': { stats: old, reps: [] } } };
+    storage.setItem(KEY, JSON.stringify({ version: 1, people: [stored], surfaces: [], tests: [] }));
+    const [loaded] = await createLocalStore(storage).listPeople();
+    expect(loaded).toMatchObject({ id: 'p1', name: 'Ana' });
+    expect(Object.keys(loaded!.references)).toEqual([]);
+  });
+
+  it('gives reps saved before weights existed a full weight and no issues', async () => {
     const storage = memoryStorage();
     const trace = synthRep({ seed: 8 });
     const old = { ok: true, features, impactSpeed: 0.6, leanDeg: 15, trace };
     storage.setItem(KEY, JSON.stringify({ people: [], surfaces: [], tests: [{ ...record('t1', 'p1', 's1'), reps: [old] }] }));
     const [loaded] = await createLocalStore(storage).listTests();
-    expect(loaded!.reps[0]).toMatchObject({ ok: true, weight: 1 });
+    expect(loaded!.reps[0]).toMatchObject({ ok: true, weight: 1, issues: [] });
   });
 
   const v1 = (parts: object) => JSON.stringify({ version: 1, people: [], surfaces: [], tests: [], ...parts });
