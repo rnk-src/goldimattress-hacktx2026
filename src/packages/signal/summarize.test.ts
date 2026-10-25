@@ -4,7 +4,7 @@ import { summarize } from './index';
 
 const rep = (peakOverV: number, weight = 1): RepResult => ({
   ok: true,
-  features: { peakOverV, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 },
+  features: { peak: 5, peakOverV, stopTime: 0.2, bounceRatio: 0.4, settleTime: 1.5 },
   impactSpeed: 0.6,
   leanDeg: 15,
   hoverJitter: 0.1,
