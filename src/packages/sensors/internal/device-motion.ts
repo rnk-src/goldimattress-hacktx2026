@@ -6,7 +6,21 @@ export interface MotionEnv {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 }
 
-export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
+type MotionEventConstructor = { requestPermission?: () => Promise<'granted' | 'denied'> };
+
+/** The browser's own motion API, or null where DeviceMotionEvent does not exist. */
+function detectBrowserEnv(): MotionEnv | null {
+  const ctor = (window as { DeviceMotionEvent?: MotionEventConstructor }).DeviceMotionEvent;
+  if (!ctor) return null;
+  const { requestPermission } = ctor;
+  return {
+    target: window,
+    ...(requestPermission ? { requestPermission: () => requestPermission.call(ctor) } : {}),
+  };
+}
+
+export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
+  const env = injected ?? detectBrowserEnv();
   let access: Access | null = null;
   let onSample: ((sample: Sample) => void) | null = null;
   let emitted = 0;
@@ -46,17 +60,18 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
 
   return {
     async requestAccess() {
-      access = env?.requestPermission ? await env.requestPermission() : env ? 'granted' : 'unsupported';
+      if (!env) access = 'unsupported';
+      else access = env.requestPermission ? await env.requestPermission() : 'granted';
       return access;
     },
     start(callback) {
-      if (access !== 'granted') throw new Error('Motion access has not been granted');
+      if (access !== 'granted' || !env) throw new Error('Motion access has not been granted');
       onSample = callback;
       emitted = 0;
       firstT = 0;
       lastT = 0;
       intervalMs = null;
-      env!.target.addEventListener('devicemotion', onMotion);
+      env.target.addEventListener('devicemotion', onMotion);
     },
     stop() {
       env?.target.removeEventListener('devicemotion', onMotion);
