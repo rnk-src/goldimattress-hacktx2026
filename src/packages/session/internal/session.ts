@@ -29,8 +29,6 @@ const EPS = 1e-6;
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
   'hold-still': { key: 'hold-still', text: 'Hold still.' },
-  'lean-less': { key: 'lean-less', text: rejectMessage('lean-too-much') },
-  'lean-more': { key: 'lean-more', text: rejectMessage('lean-too-little') },
   'drop-when-ready': { key: 'drop-when-ready', text: 'Relax your legs and drop.', beep: 'ready' },
   captured: { key: 'captured', text: 'Drop detected. Stay still and hold your breath.', beep: 'captured' },
   'rep-accepted': { key: 'rep-accepted', text: 'Good rep.', beep: 'accepted' },
@@ -133,7 +131,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
       }
       const recent = buffer.filter((w) => s.t - w.t <= spec.hoverMinS + EPS);
       if (recent[0]!.t > s.t - spec.hoverMinS + EPS) return out;
-      const hover = assessHover(recent, opts.routine, opts.ref);
+      const hover = assessHover(recent, opts.routine);
       if (!hover.still) {
         stillSince = undefined;
         if (state === 'armed') {
@@ -145,13 +143,6 @@ export function createRepSession(opts: SessionOptions): RepSession {
         }
         setState('holding', out);
         cue('hold-still', out);
-        return out;
-      }
-      const leanFix = hover.reasons.find((r) => r === 'lean-too-much' || r === 'lean-too-little');
-      if (leanFix) {
-        stillSince = undefined;
-        setState('holding', out);
-        cue(leanFix === 'lean-too-much' ? 'lean-less' : 'lean-more', out);
         return out;
       }
       // A wobbling hover can pass single windows, so arm only after a sustained run of still ones.

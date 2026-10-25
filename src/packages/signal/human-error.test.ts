@@ -59,8 +59,7 @@ describe('human-error success criteria', () => {
     expect(rate(right)).toBeGreaterThanOrEqual(0.9);
   });
 
-  // Known failure: 89.5% at this gap (95% at a bounce ratio of 0.15). `it.fails` turns red once the policy passes, then change it to `it`.
-  it.fails('3. at least 90% separate two surfaces with a realistic bounce gap, in the right direction', () => {
+  it('3. at least 90% separate two surfaces with a realistic bounce gap, in the right direction', () => {
     const verdicts = seeds.map((seed) => calibrateAndTest(seed, CHAIR, DEADER));
     const separated = verdicts.map((v) => v !== null && v.springinessLabel !== 'just-right' && !v.bouncier);
     expect(rate(separated)).toBeGreaterThanOrEqual(0.9);

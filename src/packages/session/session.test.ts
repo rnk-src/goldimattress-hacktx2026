@@ -120,32 +120,20 @@ describe('createRepSession rejects', () => {
     expect(session.rejected).toBe(1);
     expect(session.accepted).toBe(0);
   });
-
-  it('rejects a drop that is too fast for the reference', () => {
-    const session = createRepSession({ routine: 'sit-drop', ref: REF });
-    const events = run(session, synthStream([{ impactSpeed: 1.0 }, {}], 22));
-    const rep = events.find((e) => e.kind === 'rep');
-    expect(rep?.kind === 'rep' && rep.result.ok && rep.result.issues).toContain('too-fast');
-    expect(cues(events).find((c) => c.key === 'rep-rejected')?.text).toBe(rejectMessage('too-fast'));
-  });
 });
 
 describe('createRepSession lean coaching', () => {
-  it('asks to lean less or more against the reference lean', () => {
-    const less = createRepSession({ routine: 'sit-drop', ref: REF });
-    expect(keys(run(less, synthStream([{ leanDeg: 25 }]).slice(0, 55)))).toContain('lean-less');
-    expect(less.state).toBe('holding');
-    const more = createRepSession({ routine: 'sit-drop', ref: REF });
-    expect(keys(run(more, synthStream([{ leanDeg: 5 }]).slice(0, 55)))).toContain('lean-more');
+  it('does not ask to match the calibration lean, since another surface invites another lean', () => {
+    const session = createRepSession({ routine: 'sit-drop', ref: REF });
+    const events = run(session, synthStream([{ leanDeg: 35 }]).slice(0, 90));
+    expect(keys(events)).not.toContain('lean-less');
+    expect(keys(events)).not.toContain('lean-more');
+    expect(session.state).not.toBe('holding');
   });
 });
 
 const REASONS: RejectReason[] = [
   'not-still',
-  'lean-too-much',
-  'lean-too-little',
-  'too-fast',
-  'too-slow',
   'caught-landing',
   'left-surface',
   'no-drop-found',
@@ -157,7 +145,5 @@ describe('rejectMessage', () => {
     const messages = REASONS.map(rejectMessage);
     expect(new Set(messages).size).toBe(REASONS.length);
     messages.forEach((m) => expect(m.length).toBeGreaterThan(0));
-    expect(rejectMessage('lean-too-much')).toBe('Lean a bit less.');
-    expect(rejectMessage('lean-too-little')).toBe('Lean a bit more.');
   });
 });

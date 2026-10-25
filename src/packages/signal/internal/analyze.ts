@@ -162,7 +162,7 @@ function drops(trace: Trace, mags: readonly number[]): Segments[] {
 function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
   const candidates = drops(trace, mags);
   const still = candidates.find(
-    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, undefined, DROP_JITTER).still,
+    (c) => assessHover(trace.samples.slice(c.hoverFrom, c.descentStart), trace.routine, DROP_JITTER).still,
   );
   const chosen = still ?? candidates[0];
   if (chosen === undefined) return 'no-drop-found';
@@ -194,7 +194,7 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
   const seg = segment(trace, mags);
   if (typeof seg === 'string') return reject(trace, [seg]);
 
-  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, undefined, DROP_JITTER);
+  const assessment = assessHover(trace.samples.slice(seg.hoverFrom, seg.descentStart), trace.routine, DROP_JITTER);
   // Only a hover too violent to be a hover is dropped; the rest of the hover quality is scored below.
   const early: RejectReason[] = assessment.still ? [] : ['not-still'];
   if (leftSurface(trace, mags, seg.impact)) early.push('left-surface');
@@ -202,9 +202,6 @@ export function analyzeRep(trace: Trace, ref?: ReferenceStats): RepResult {
 
   const measured = measure(trace, mags, seg, assessment.leanDeg);
   if (measured === null) return reject(trace, ['no-drop-found']);
-  const { weight, issues } = scoreRep(
-    { jitter: assessment.jitter, leanDeg: measured.leanDeg, impactSpeed: measured.impactSpeed, stopTime: measured.features.stopTime },
-    ref,
-  );
+  const { weight, issues } = scoreRep({ jitter: assessment.jitter, stopTime: measured.features.stopTime }, ref);
   return { ok: true, ...measured, hoverJitter: assessment.jitter, weight, issues, trace };
 }
