@@ -1,13 +1,11 @@
 import type { ReferenceStats, RejectReason, RepResult, Sample, Trace } from '../../domain';
 import { FLIGHT_ACCEL } from './constants';
-import { DROP_MODELS, IMPACT_EXCESS } from './drop-model';
+import { DROP_MODELS } from './drop-model';
 import type { DropModel, Segments } from './drop-model';
 import { repFeatures } from './features';
 import { DROP_JITTER, assessHover } from './hover';
 import { estimateRate, magnitude } from './math';
 import { dropModelOf } from './routine';
-
-export { IMPACT_EXCESS };
 
 /**
  * A drop slower than this is not a drop, m/s. Real accepted reps measured 0.35 to 1.13; a rep that read 0.10 had
@@ -54,7 +52,6 @@ function leftSurface(trace: Trace, mags: readonly number[], impact: number): boo
   }
   return false;
 }
-
 
 /** Impact speed, features, lean and flight time, or null when the speed or a feature is not a finite number. */
 function measure(model: DropModel, trace: Trace, mags: readonly number[], seg: Segments, leanDeg: number) {
