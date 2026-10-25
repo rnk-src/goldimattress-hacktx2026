@@ -256,6 +256,7 @@ describe('analyzeRep on bad data', () => {
     return result;
   };
   const base = synthRep({ noise: 0 });
+  const hoverOnly = synthRep({ noise: 0, failure: 'no-drop' });
 
   it.each([
     ['an empty trace', { ...base, samples: [] }],
@@ -268,7 +269,10 @@ describe('analyzeRep on bad data', () => {
         samples: base.samples.map((s, i) => (i === 40 ? { ...s, ay: 30 } : { ...s, ay: 9.81, az: 0 })),
       },
     ],
-    ['a spike at the first sample', { ...base, samples: base.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) }],
+    [
+      'a spike at the first sample with no drop after it',
+      { ...hoverOnly, samples: hoverOnly.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) },
+    ],
   ])('rejects %s without throwing', (_name, trace) => {
     expect(() => rejected(trace)).not.toThrow();
   });
@@ -282,14 +286,15 @@ describe('analyzeRep on bad data', () => {
     }
   });
 
-  it('rejects an impact sample at or below 1 g, which leaves no first lobe', () => {
+  it('treats a first impact sample at or below 1 g as part of the descent and keeps the numbers finite', () => {
     const samples = base.samples.map((s, i) => {
       if (i !== 78) return s;
       const k = (9.81 - 0.2) / Math.hypot(s.ax, s.ay, s.az);
       return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
     });
-    const result = rejected({ ...base, samples });
-    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
+    const result = analyzeRep({ ...base, samples });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(Object.values(result.features).every(Number.isFinite)).toBe(true);
   });
 
   it('never accepts a rep with a non-finite number in it', () => {
@@ -317,5 +322,90 @@ describe('analyzeRep sample gaps', () => {
 
   it('accepts a gap that starts more than 1 s after the impact', () => {
     expect(analyzeRep(without(3.0, 3.3)).ok).toBe(true);
+  });
+});
+
+describe('analyzeRep segmentation', () => {
+  /** Scales |a| of the samples in [from, to) to `mag`, keeping the direction. */
+  const withMagnitude = (trace: ReturnType<typeof synthRep>, from: number, to: number, mag: number) => ({
+    ...trace,
+    samples: trace.samples.map((s) => {
+      if (s.t < from || s.t >= to) return s;
+      const k = mag / Math.hypot(s.ax, s.ay, s.az);
+      return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
+    }),
+  });
+
+  it('ignores a spike at the first sample when a real drop follows', () => {
+    const trace = synthRep({ noise: 0 });
+    const spiked = { ...trace, samples: trace.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) };
+    expect(analyzeRep(spiked).ok).toBe(true);
+  });
+
+  it('follows a descent that a single bounce sample interrupts', () => {
+    const trace = synthRep({ dropS: 0.3 });
+    const dropAt = 1.3 - 0.05;
+    const bounced = withMagnitude(trace, dropAt - 0.017, dropAt, 10.2);
+    expect(analyzeRep(bounced).ok).toBe(true);
+  });
+
+  it('accepts an exact hover window and rejects one a sample too short', () => {
+    expect(assessHover(hoverOf({}).slice(0, 18), 'sit-drop').reasons).toEqual([]);
+    expect(assessHover(hoverOf({}).slice(0, 17), 'sit-drop').reasons).toEqual(['not-still']);
+  });
+});
+
+describe('analyzeRep drop selection', () => {
+  const setMagnitude = (trace: ReturnType<typeof synthRep>, mag: (t: number) => number | null) => ({
+    ...trace,
+    samples: trace.samples.map((s) => {
+      const m = mag(s.t);
+      if (m === null) return s;
+      const k = m / Math.hypot(s.ax, s.ay, s.az);
+      return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
+    }),
+  });
+
+  it('measures a hard surface whose rebound dips right after the 2-3 sample peak', () => {
+    const result = analyzeRep(synthRep({ bounceHz: 5, bounceRatio: 0.1, noise: 0.02, durationS: 4 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
+  });
+
+  it('finds no descent in a noisy hover at the jitter limit', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const result = analyzeRep(synthRep({ failure: 'no-drop', noise: 0.45, durationS: 20, seed }));
+      expect(result.ok === false && result.reasons).toContain('no-drop-found');
+    }
+  });
+
+  it('takes the drop that follows a still hover, not wobble with a dip and bump before it', () => {
+    const wobble = (t: number) => (t < 1.2 ? 9.81 + 2.5 * Math.sin(2 * Math.PI * 3 * t) : null);
+    const result = analyzeRep(setMagnitude(synthRep({ hoverS: 2.5, durationS: 6 }), wobble));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
+  });
+
+  it('takes a soft drop whose peak is lower than a bump before it', () => {
+    const bump = (t: number) =>
+      t < 1.2
+        ? 9.81 + 2.5 * Math.sin(2 * Math.PI * 3 * t)
+        : t >= 1.5 && t < 1.6
+          ? 9.81 + 14
+          : t >= 1.35 && t < 1.5
+            ? 6
+            : null;
+    const soft = synthRep({ impactSpeed: 0.3, bounceHz: 1, bounceRatio: 0.3, hoverS: 2.5, durationS: 6 });
+    const result = analyzeRep(setMagnitude(soft, bump));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.3, 1);
+  });
+
+  it('takes the first peak after the descent, not a taller later bounce', () => {
+    const springy = synthRep({ bounceHz: 2, bounceRatio: 0.8, durationS: 5 });
+    const later = (t: number) => (t >= 1.62 && t < 1.65 ? 9.81 + 25 : null);
+    const result = analyzeRep(setMagnitude(springy, later));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
   });
 });

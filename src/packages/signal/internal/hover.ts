@@ -6,8 +6,20 @@ import { routineSpec } from './routine';
 /** A hover must read about 1 g, so a window of zeros or free fall is not a hover, m/s². */
 const HOVER_G_TOL = 2;
 
-// shortcut: fixed jitter limit from synthetic noise (0.05 m/s²), tune on real G2 fixtures.
-const MAX_JITTER = 0.15;
+/**
+ * Largest sd of |a| over the 0.3 s hover window, m/s². Accepted real hovers measured 0.11 to 0.40; the
+ * couch hovers that fail measured 0.57 (legs moving) and 1.19 (bump); the synthetic wobble measures 0.7.
+ * The margin is thin on both sides (1.1x above, 1.3x below), so a reference-relative limit may suit better.
+ * shortcut: tuned on two sets (desk chair, couch), re-tune with more surfaces.
+ */
+const MAX_JITTER = 0.45;
+
+/**
+ * How far under hoverMinS a window's covered time may fall, s. Real timestamps are rounded to 1 ms and uneven,
+ * so an exact window measured 0.2996 s for 0.3 s. This is a tenth of a sample period at 60 Hz, so a window
+ * one sample short (0.0167 s) is still rejected.
+ */
+const COVERAGE_TOL_S = 0.002;
 
 /** The phone axis that points along gravity when the lean is 0: the torso (y) or the belly normal (z). */
 const LEAN_AXIS: Record<Routine, 'ay' | 'az'> = { 'sit-drop': 'ay', 'bridge-drop': 'az' };
@@ -38,7 +50,7 @@ export function assessHover(
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
     Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
-    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - 1e-6;
+    jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - COVERAGE_TOL_S;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
   if (ref) {
