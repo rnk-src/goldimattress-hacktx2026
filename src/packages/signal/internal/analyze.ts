@@ -9,6 +9,12 @@ import { routineSpec } from './routine';
 const IMPACT_EXCESS = 1.5;
 /** |a| this far below 1 g counts as the descent, m/s². */
 const DESCENT_DEFICIT = 0.5;
+/**
+ * A descent shorter than this is not a drop, s. Real descents lasted 0.22 to 0.33 s (|a| more than 0.5
+ * below 1 g); a hover bump has none or a one-sample dip.
+ * shortcut: tuned on one 5-rep desk-chair set, re-tune with more surfaces.
+ */
+const MIN_DESCENT_S = 0.1;
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
 /** Below this rate the impact is too coarse to measure, Hz. */
@@ -73,19 +79,34 @@ function impactSpeedOf(trace: Trace, mags: readonly number[], descentStart: numb
 
 type Segments = { impact: number; descentStart: number; hoverFrom: number };
 
-/** Finds the hover, descent and impact, or says why the trace has none. */
-function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
-  const trigger = mags.findIndex((m) => m - GRAVITY > IMPACT_EXCESS);
-  if (trigger < 0) return 'no-drop-found';
+/**
+ * The impact and descent start for the rise at sample `trigger`, or null when no descent of at least
+ * MIN_DESCENT_S leads into it. A bump in the hover has no such descent.
+ */
+function descentInto(trace: Trace, mags: readonly number[], trigger: number) {
   // A light-damped impact rises slowly, so back up over the rise to the end of the descent.
   // shortcut: a descent with less than DESCENT_DEFICIT of deficit is not seen, so the rep is rejected as not-still.
   let impact = trigger;
   while (impact > 0 && GRAVITY - mags[impact - 1]! <= DESCENT_DEFICIT) impact--;
-  if (impact < 1) return 'no-drop-found';
+  if (impact < 1) return null;
   let descentStart = impact;
   while (descentStart > 0 && GRAVITY - mags[descentStart - 1]! > DESCENT_DEFICIT) descentStart--;
-  const hoverStartT = trace.samples[descentStart]!.t - routineSpec(trace.routine).hoverMinS - EPS;
-  const hoverFrom = trace.samples.findIndex((s) => s.t >= hoverStartT);
+  const lastT = trace.samples[impact - 1]!.t;
+  return lastT - trace.samples[descentStart]!.t >= MIN_DESCENT_S ? { impact, descentStart } : null;
+}
+
+/** Finds the hover, descent and impact, or says why the trace has none. */
+function segment(trace: Trace, mags: readonly number[]): Segments | RejectReason {
+  let found: ReturnType<typeof descentInto> = null;
+  for (let i = 0; i < mags.length && found === null; i++) {
+    if (mags[i]! - GRAVITY > IMPACT_EXCESS) found = descentInto(trace, mags, i);
+  }
+  if (found === null) return 'no-drop-found';
+  const { impact, descentStart } = found;
+  // Start at the last sample at or before the hover start, so the window covers the full hover time.
+  const hoverStartT = trace.samples[descentStart]!.t - routineSpec(trace.routine).hoverMinS + EPS;
+  const firstAfter = trace.samples.findIndex((s) => s.t > hoverStartT);
+  const hoverFrom = Math.max(0, firstAfter - 1);
   if (hasGap(trace.samples, hoverFrom, trace.samples[impact]!.t + GAP_WINDOW_AFTER_IMPACT_S)) {
     return 'low-sample-rate';
   }
