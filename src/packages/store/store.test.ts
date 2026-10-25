@@ -255,7 +255,18 @@ describe('schema versioning and bad data', () => {
     expect(await store.listTests()).toHaveLength(1);
   });
 
-  it.each([['broken JSON', '{not json'], ['a non-object', '42'], ['missing lists', '{"version":1}']])(
+  const v1 = (parts: object) => JSON.stringify({ version: 1, people: [], surfaces: [], tests: [], ...parts });
+  const badRep = (trace: unknown) => ({ ...record('t1', 'p1', 's1'), reps: [{ ok: true, trace }] });
+  const meta = { id: 'r', routine: 'sit-drop' };
+  it.each([
+    ['broken JSON', '{not json'],
+    ['a non-object', '42'],
+    ['missing lists', '{"version":1}'],
+    ['a person without references', v1({ people: [{ id: 'p1', name: 'Ana' }] })],
+    ['a rep without a trace', v1({ tests: [badRep(undefined)] })],
+    ['a bad base64 sample string', v1({ tests: [badRep({ ...meta, samples: '***' })] })],
+    ['a sample string of a partial sample', v1({ tests: [badRep({ ...meta, samples: btoa('abcd') })] })],
+  ])(
     'reads %s as empty, and the next save replaces it',
     async (_name, stored) => {
       const storage = memoryStorage();
