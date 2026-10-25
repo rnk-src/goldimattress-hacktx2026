@@ -20,6 +20,8 @@ const LATE_DROP_MARGIN_S = 1;
  */
 const READY_S = 10;
 const REPS = 5;
+/** The last seconds before a window opens that each get a beep. */
+const COUNT_IN_BEEPS = 3;
 const WINDOW_S = CAPTURE_SPEC.preRollS + CAPTURE_SPEC.captureS + LATE_DROP_MARGIN_S;
 const REST_S = CAPTURE_SPEC.restS;
 
@@ -119,14 +121,10 @@ function captureView(
         </header>
         <section class="cue-panel" aria-labelledby="capture-title">
           <p data-rep-label class="rep-label">Rep 1 of ${REPS}</p>
-          <p data-countdown class="countdown" style="font-size:1.75rem;font-weight:700"></p>
-          <p data-capture-status class="cue-panel__text" role="status" aria-live="polite">Ready for five repetitions.</p>
+          <p data-countdown class="countdown"></p>
+          <p data-capture-status class="cue-panel__text" role="status" aria-live="polite">Ready for ${REPS} repetitions.</p>
           <ol class="repetition-rail" data-repetition-progress aria-label="Capture progress">
-            <li data-state="pending"><span>1</span><span class="sr-only">Repetition 1</span></li>
-            <li data-state="pending"><span>2</span><span class="sr-only">Repetition 2</span></li>
-            <li data-state="pending"><span>3</span><span class="sr-only">Repetition 3</span></li>
-            <li data-state="pending"><span>4</span><span class="sr-only">Repetition 4</span></li>
-            <li data-state="pending"><span>5</span><span class="sr-only">Repetition 5</span></li>
+            ${Array.from({ length: REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span><span class="sr-only">Repetition ${i + 1}</span></li>`).join('')}
           </ol>
         </section>
         <dl class="measurement-strip" aria-label="Live sensor timing">
@@ -139,10 +137,10 @@ function captureView(
             <label><span>Recording label</span><input name="label" value="Raw capture" maxlength="80" autocomplete="off"></label>
             <label><span>Surface</span><input name="surface" value="Unnamed surface" maxlength="80" autocomplete="off"></label>
           </div>
-          <button class="button button--primary" type="button" data-action="start-capture">Start five-rep capture</button>
+          <button class="button button--primary" type="button" data-action="start-capture">Start ${REPS}-rep capture</button>
           <div class="export-slot" data-export></div>
         </section>
-        <p class="capture-footnote">Keep this page visible until all five markers are complete. Audio and on-screen cues occur together.</p>
+        <p class="capture-footnote">Keep this page visible until all ${REPS} markers are complete. Audio and on-screen cues occur together.</p>
       </main>
     </div>
   `;
@@ -196,37 +194,76 @@ function captureView(
     void coach.keepAwake(true);
     let repetition = 0;
 
-    /** Shows `text(secondsLeft)` once per second, then calls `then`. The number sits outside the live region. */
-    const countDown = (seconds: number, text: (left: number) => string, then: () => void) => {
-      let left = seconds;
-      if (countdown) countdown.textContent = text(left);
-      const tick = () => {
-        if (aborted) return;
-        left -= 1;
-        if (left > 0) {
-          if (countdown) countdown.textContent = text(left);
-          later(tick, 1_000);
-        } else then();
-      };
-      later(tick, 1_000);
+    /** Bumped when a phase ends or starts, so the old phase's display ticks stop. */
+    let phaseId = 0;
+    const resetDisplay = () => {
+      if (countdown) countdown.textContent = '';
+      if (repLabel) repLabel.textContent = `Rep 1 of ${REPS}`;
     };
 
-    if (status) status.textContent = 'Get ready. Hold the phone flat on your sternum and get into the hover.';
-    countDown(READY_S, (n) => `Get ready: first drop window opens in ${n} s`, () => record());
+    /**
+     * Runs one phase. A single timer ends it after the real length, so the window is exact.
+     * The display ticks only render: they read the time left from a deadline, so a late tick still shows the truth.
+     * With `beepLast`, the last 3 seconds each play one short beep, since the person cannot look at the screen.
+     */
+    const phase = (seconds: number, text: (left: number) => string, then: () => void, beepLast = false) => {
+      phaseId += 1;
+      const id = phaseId;
+      const deadline = deps.now().getTime() + seconds * 1_000;
+      const beeped = new Set<number>();
+      const render = () => {
+        if (aborted || id !== phaseId) return;
+        const left = Math.max(0, Math.ceil((deadline - deps.now().getTime()) / 1_000));
+        if (countdown) countdown.textContent = text(left);
+        if (beepLast && left >= 1 && left <= COUNT_IN_BEEPS && !beeped.has(left)) {
+          beeped.add(left);
+          coach.play({ key: 'next-rep', text: '', beep: 'ready' });
+        }
+        later(render, 1_000);
+      };
+      render();
+      later(() => {
+        if (aborted) return;
+        phaseId += 1;
+        then();
+      }, seconds * 1_000);
+    };
 
-    later(() => {
-      if (received > 0) return;
-      aborted = true;
-      running = false;
+    const finish = () => {
+      resetDisplay();
       deps.source.stop();
       void coach.keepAwake(false);
-      progress.forEach((item) => {
-        item.dataset.state = 'pending';
-        item.removeAttribute('aria-current');
-      });
-      if (status) status.textContent = 'No motion events arrived. Use a phone with motion sensors and try again.';
-      button.disabled = false;
-    }, 2_000);
+      running = false;
+      if (traces.length === REPS) {
+        progress.forEach((item) => {
+          item.dataset.state = 'complete';
+          item.removeAttribute('aria-current');
+        });
+      }
+      if (traces.length > 0) {
+        const recording: Recording = {
+          version: 1,
+          label: label?.value.trim() || 'Raw capture',
+          surface: surface?.value.trim() || 'Unnamed surface',
+          traces,
+        };
+        const fileName = `goldimattress-recording-${fileNamePart(recording.label, 'raw-capture')}-${fileNamePart(recording.surface, 'unnamed-surface')}.json`;
+        if (exportUrl) URL.revokeObjectURL(exportUrl);
+        exportUrl = URL.createObjectURL(new Blob([serializeRecording(recording)], { type: 'application/json' }));
+        if (exportSlot) {
+          exportSlot.innerHTML = `<a class="button button--export" data-action="export-recording" download="${fileName}">Export Recording JSON</a>`;
+          exportSlot.querySelector('a')?.setAttribute('href', exportUrl);
+        }
+        if (status) {
+          status.textContent =
+            traces.length === REPS
+              ? 'Capture complete'
+              : `Captured ${traces.length} of ${REPS} repetitions. Some windows had no motion events; export what was recorded or try again.`;
+        }
+      } else if (status) {
+        status.textContent = 'Capture ended without enough motion events. Keep this page visible and try again.';
+      }
+    };
 
     const record = () => {
       repetition += 1;
@@ -242,8 +279,7 @@ function captureView(
       if (status) status.textContent = readyText;
       if (repLabel) repLabel.textContent = `Rep ${repetition} of ${REPS}`;
       coach.play({ key: 'drop-when-ready', text: readyText, beep: 'ready' });
-      countDown(WINDOW_S, (n) => `Recording: ${n} s left, drop now when ready`, () => {
-        if (aborted) return;
+      phase(WINDOW_S, (n) => `Recording: ${n} s left, drop now when ready`, () => {
         const samples = activeSamples;
         activeSamples = undefined;
         const first = samples?.[0];
@@ -257,60 +293,44 @@ function captureView(
             samples,
           });
         }
+        const item = progress[repetition - 1];
+        if (item) {
+          item.dataset.state = 'complete';
+          item.removeAttribute('aria-current');
+        }
         const finalRep = repetition === REPS;
         const capturedText = finalRep
           ? `Repetition ${repetition} captured.`
           : `Repetition ${repetition} captured. Rest for ${REST_S} seconds.`;
         if (status) status.textContent = capturedText;
         coach.play({ key: 'captured', text: capturedText, beep: 'captured' });
-        const afterRest = () => {
-          if (aborted) return;
-          if (!finalRep) record();
-          else {
-            if (countdown) countdown.textContent = '';
-            deps.source.stop();
-            coach.keepAwake(false);
-            running = false;
-            if (traces.length === 5) {
-              progress.forEach((item) => {
-                item.dataset.state = 'complete';
-                item.removeAttribute('aria-current');
-              });
-            }
-            if (traces.length > 0) {
-              const recording: Recording = {
-                version: 1,
-                label: label?.value.trim() || 'Raw capture',
-                surface: surface?.value.trim() || 'Unnamed surface',
-                traces,
-              };
-              const fileName = `goldimattress-recording-${fileNamePart(recording.label, 'raw-capture')}-${fileNamePart(recording.surface, 'unnamed-surface')}.json`;
-              if (exportUrl) URL.revokeObjectURL(exportUrl);
-              exportUrl = URL.createObjectURL(
-                new Blob([serializeRecording(recording)], { type: 'application/json' }),
-              );
-              if (exportSlot) {
-                exportSlot.innerHTML = `<a class="button button--export" data-action="export-recording" download="${fileName}">Export Recording JSON</a>`;
-                exportSlot.querySelector('a')?.setAttribute('href', exportUrl);
-              }
-              if (status) {
-                status.textContent =
-                  traces.length === 5
-                    ? 'Capture complete'
-                    : `Captured ${traces.length} of 5 repetitions. Some windows had no motion events; export what was recorded or try again.`;
-              }
-            } else if (status) {
-              status.textContent = 'Capture ended without enough motion events. Keep this page visible and try again.';
-            }
-          }
-        };
-        if (finalRep) afterRest();
-        else {
-          if (repLabel) repLabel.textContent = `Next: rep ${repetition + 1} of ${REPS}`;
-          countDown(REST_S, (n) => `Rest: next rep opens in ${n} s. Get back into the hover.`, afterRest);
+        if (finalRep) {
+          finish();
+          return;
         }
+        if (repLabel) repLabel.textContent = `Next: rep ${repetition + 1} of ${REPS}`;
+        phase(REST_S, (n) => `Rest: next rep opens in ${n} s. Get back into the hover.`, record, true);
       });
     };
+
+    if (status) status.textContent = 'Get ready. Hold the phone flat on your sternum and get into the hover.';
+    coach.play({ key: 'place-phone', text: 'Get ready. Get into the hover.' });
+    phase(READY_S, (n) => `Get ready: first drop window opens in ${n} s`, record, true);
+
+    later(() => {
+      if (received > 0) return;
+      aborted = true;
+      running = false;
+      deps.source.stop();
+      void coach.keepAwake(false);
+      progress.forEach((item) => {
+        item.dataset.state = 'pending';
+        item.removeAttribute('aria-current');
+      });
+      resetDisplay();
+      if (status) status.textContent = 'No motion events arrived. Use a phone with motion sensors and try again.';
+      button.disabled = false;
+    }, 2_000);
   });
 
   return () => {

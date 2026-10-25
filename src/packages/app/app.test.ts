@@ -176,19 +176,20 @@ describe('startApp', () => {
     start?.click();
 
     expect(start?.disabled).toBe(true);
-    expect(cues).toEqual([]);
+    const windows = () => cues.filter((cue) => cue.key === 'drop-when-ready' || cue.key === 'captured');
+    expect(cues.map((cue) => cue.key)).toEqual(['place-phone']);
     await vi.advanceTimersByTimeAsync(READY_MS);
-    expect(cues.map((cue) => cue.beep)).toEqual(['ready']);
+    expect(windows().map((cue) => cue.beep)).toEqual(['ready']);
 
     for (let repetition = 0; repetition < 5; repetition += 1) {
       await vi.advanceTimersByTimeAsync(WINDOW_MS);
-      expect(cues.at(-1)?.beep).toBe('captured');
+      expect(windows().at(-1)?.beep).toBe('captured');
       if (repetition === 4) break;
       await vi.advanceTimersByTimeAsync(REST_MS);
-      expect(cues.at(-1)?.beep).toBe('ready');
+      expect(windows().at(-1)?.beep).toBe('ready');
     }
 
-    expect(cues.map((cue) => cue.beep)).toEqual([
+    expect(windows().map((cue) => cue.beep)).toEqual([
       'ready',
       'captured',
       'ready',
@@ -521,16 +522,17 @@ describe('startApp', () => {
 });
 
 describe('raw capture countdown and timing', () => {
-  function mountCapture(label = '', surface = '') {
+  function mountCapture(label = '', surface = '', source: SensorSource = createReplaySource(replayTrace(), { realtime: true })) {
     vi.useFakeTimers();
+    const cues: Cue[] = [];
     const root = document.createElement('main');
     document.body.append(root);
     window.location.hash = '#/capture';
     startApp(root, {
-      source: createReplaySource(replayTrace(), { realtime: true }),
+      source,
       store: store(),
-      makeCoach: coach,
-      now: () => new Date('2026-10-24T16:00:00.000Z'),
+      makeCoach: () => ({ ...coach(), play: (cue) => void cues.push(cue) }),
+      now: () => new Date(),
       device: 'Replay phone',
       newId: () => 'test-id',
     });
@@ -542,7 +544,7 @@ describe('raw capture countdown and timing', () => {
     if (surface !== '') set('surface', surface);
     const countdown = () => root.querySelector('[data-countdown]')?.textContent ?? '';
     const start = () => root.querySelector<HTMLButtonElement>('[data-action="start-capture"]')?.click();
-    return { root, countdown, start };
+    return { root, countdown, start, cues };
   }
 
   it('counts down the get-ready period before the first window', async () => {
@@ -581,6 +583,67 @@ describe('raw capture countdown and timing', () => {
     expect(root.textContent).toContain('Capture complete');
     expect(countdown()).toBe('');
     await vi.advanceTimersByTimeAsync(5_000);
+    expect(countdown()).toBe('');
+  });
+
+  it('beeps the last 3 seconds before each window and cues the get-ready start', async () => {
+    const { cues, start } = mountCapture();
+    start();
+    expect(cues.map((c) => [c.key, c.beep])).toEqual([['place-phone', undefined]]);
+    expect(cues[0]?.text).toContain('Get ready');
+    await vi.advanceTimersByTimeAsync(READY_MS - 4_000);
+    expect(cues).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    const ticks = () => cues.filter((c) => c.key === 'next-rep');
+    expect(ticks().map((c) => c.beep)).toEqual(['ready', 'ready', 'ready']);
+    expect(ticks().every((c) => c.text === '')).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cues.at(-1)?.key).toBe('drop-when-ready');
+    // No count-in beeps inside the window; three more before rep 2.
+    await vi.advanceTimersByTimeAsync(WINDOW_MS + REST_MS - 4_000);
+    expect(ticks()).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(ticks()).toHaveLength(6);
+  });
+
+  it('keeps the window exact and the countdown true when display ticks run late', async () => {
+    const { countdown, start, cues } = mountCapture();
+    start();
+    await vi.advanceTimersByTimeAsync(READY_MS);
+    vi.setSystemTime(Date.now() + 3_000);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(countdown()).toBe(`Recording: ${WINDOW_MS / 1_000 - 4} s left, drop now when ready`);
+    await vi.advanceTimersByTimeAsync(WINDOW_MS - 1_001);
+    expect(cues.some((c) => c.key === 'captured')).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(cues.some((c) => c.key === 'captured')).toBe(true);
+  });
+
+  it('marks a rep complete when its window closes and leaves the next one pending', async () => {
+    const { root, start } = mountCapture();
+    start();
+    await vi.advanceTimersByTimeAsync(READY_MS + WINDOW_MS);
+    const rail = root.querySelector('[data-repetition-progress]');
+    expect(rail?.querySelectorAll('li')).toHaveLength(5);
+    expect(rail?.children[0]?.getAttribute('data-state')).toBe('complete');
+    expect(rail?.children[1]?.getAttribute('data-state')).toBe('pending');
+    expect(rail?.querySelector('[aria-current]')).toBeNull();
+  });
+
+  it('clears the countdown and rep label when the no-motion check aborts', async () => {
+    const silent: SensorSource = {
+      requestAccess: () => Promise.resolve('granted'),
+      start() {},
+      stop() {},
+      sampleRateHz: null,
+    };
+    const { root, countdown, start } = mountCapture('', '', silent);
+    start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(root.textContent).toContain('No motion events arrived');
+    expect(countdown()).toBe('');
+    expect(root.querySelector('[data-rep-label]')?.textContent).toBe('Rep 1 of 5');
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(countdown()).toBe('');
   });
 

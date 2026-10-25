@@ -432,3 +432,9 @@ h2 {
     transition-duration: 0.01ms !important;
   }
 }
+
+.countdown {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
