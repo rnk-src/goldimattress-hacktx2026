@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Coach } from '../coach';
 import type { SensorSource } from '../sensors';
-import { caveatTexts, hardnessText, springinessText } from './internal/wording';
 import type { Person, ReferenceStats, Sample, Trace, Verdict } from '../domain';
 import { createReplaySource } from '../sensors';
 import { analyzeRep, buildReference } from '../signal';
@@ -9,7 +8,7 @@ import { createLocalStore } from '../store';
 import type { Store } from '../store';
 import { memoryStorage, synthRep, synthStream } from '../testkit';
 import type { SynthOptions } from '../testkit';
-import { startApp } from './index';
+import { caveatTexts, hardnessText, springinessText, startApp } from './index';
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -287,6 +286,32 @@ describe('test screen', () => {
 
     const [record] = await store.listTests();
     expect(record?.reps.every((rep) => rep.trace.device === 'iPhone' && rep.trace.startedAt !== '')).toBe(true);
+  });
+
+  it('retypes a known surface when the user picks another type, and hides a stale result on routine change', async () => {
+    const store = await storeWith(withReference());
+    const first = mount(stream([]), store);
+    await runTest(first.root, 'Blue couch', 'couch');
+    first.stop();
+    const second = mount(stream([]), store);
+    await runTest(second.root, 'Blue couch', 'mattress');
+
+    expect(await store.findSurfaces('')).toMatchObject([{ name: 'Blue couch', type: 'mattress' }]);
+    const routine = second.root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+    routine.value = 'bridge-drop';
+    routine.dispatchEvent(new Event('change'));
+    expect(second.root.querySelector<HTMLElement>('[data-result]')?.hidden).toBe(true);
+  });
+
+  it('clears the missing-name error as soon as the user types', async () => {
+    const { root } = mount(stream([]), await storeWith(withReference()));
+    await flush();
+    root.querySelector<HTMLButtonElement>('[data-action="start-test"]')?.click();
+    expect(text(root, '[data-form-error]')).toContain('Enter the name');
+
+    root.querySelector<HTMLInputElement>('input[name="surface"]')!.dispatchEvent(new Event('input'));
+
+    expect(text(root, '[data-form-error]')).toBe('');
   });
 });
 

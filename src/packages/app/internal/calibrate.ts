@@ -1,15 +1,11 @@
 import type { Coach } from '../../coach';
 import type { FeatureName, Person, Routine } from '../../domain';
-import { rejectMessage } from '../../session';
+import { GOAL_REPS, MIN_REPS, rejectMessage } from '../../session';
 import { buildReference, isUsable, routineSpec } from '../../signal';
 import { PLACEMENT } from './placement';
 import { createRepRun } from './rep-run';
 import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
-
-/** Accepted reps that finish a calibration. */
-// shortcut: one app-wide constant, not per routine, so change it here if a routine needs another count.
-const CALIBRATION_REPS = 5;
 
 const FEATURE_UNITS: Record<FeatureName, string> = {
   peakOverV: '1/s',
@@ -42,16 +38,17 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         <section data-placement aria-label="Phone placement"></section>
         <p data-cue-text class="cue-panel__text" role="status" aria-live="polite"></p>
         <p data-rep-feedback role="status" aria-live="polite"></p>
-        <p data-usable-count>0 of 5 usable reps</p>
-        <ol data-rep-dots aria-label="Accepted reps">
-          ${Array.from({ length: CALIBRATION_REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span></li>`).join('')}
+        <p data-usable-count>0 of ${GOAL_REPS} usable reps</p>
+        <ol class="repetition-rail" data-rep-dots aria-label="Accepted reps">
+          ${Array.from({ length: GOAL_REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span></li>`).join('')}
         </ol>
         <ul data-rejected-reps aria-label="Rejected reps"></ul>
         <button class="button button--primary" type="button" data-action="start-calibration" disabled>Start calibration</button>
         <button class="button button--quiet" type="button" data-action="skip-rest" hidden>Skip rest</button>
-        <button class="button button--quiet" type="button" data-action="finish-calibration" hidden disabled>Finish with 3 reps</button>
+        <button class="button button--quiet" type="button" data-action="finish-calibration" hidden disabled>Finish with ${MIN_REPS} reps</button>
         <p data-profile-prompt role="status">Loading profiles…</p>
-        <section data-calibration-result aria-label="Calibration result" hidden></section>
+        <p data-existing-reference role="status"></p>
+        <section data-calibration-result aria-label="Calibration result" aria-live="polite" hidden></section>
       </main>
     </div>
   `;
@@ -68,6 +65,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const finishButton = root.querySelector<HTMLButtonElement>('[data-action="finish-calibration"]')!;
   const skipButton = root.querySelector<HTMLButtonElement>('[data-action="skip-rest"]')!;
   const profilePrompt = root.querySelector<HTMLElement>('[data-profile-prompt]')!;
+  const existingNote = root.querySelector<HTMLElement>('[data-existing-reference]')!;
   const result = root.querySelector<HTMLElement>('[data-calibration-result]')!;
   let mounted = true;
   let profiles: Person[] = [];
@@ -92,27 +90,36 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       profilePrompt.innerHTML = 'Create a profile before calibrating. <a href="#/profile">Create a profile</a>';
     }
     button.disabled = !selectedPerson;
+    showExisting();
   }).catch(() => {
     if (mounted) profilePrompt.textContent = 'Could not load profiles. Reload this page to try again.';
   });
   profileSelect.addEventListener('change', () => {
     selectedPerson = profiles.find((person) => person.id === profileSelect.value);
     if (selectedPerson) profilePrompt.textContent = `Calibrating for ${selectedPerson.name}`;
+    clearProgress();
+    showExisting();
   });
 
   const routine = () => routineSelect.value as Routine;
+  const showExisting = () => {
+    const saved = selectedPerson?.references[routine()]?.stats;
+    existingNote.textContent = saved
+      ? `A reference from ${saved.createdAt.slice(0, 10)} (${saved.repCount} reps) exists. Finishing will replace it.`
+      : '';
+  };
   const showPlacement = () => {
     const spec = routineSpec(routine());
-    placement.innerHTML = `<p>${PLACEMENT[routine()].text}</p><p>Stay still for ${spec.captureS} s after each drop. Rest ${spec.restS} s between reps. Do ${CALIBRATION_REPS} good reps.</p>`;
+    placement.innerHTML = `<p>${PLACEMENT[routine()].text}</p><p>Stay still for ${spec.captureS} s after each drop. Rest ${spec.restS} s between reps. Do ${GOAL_REPS} good reps.</p>`;
   };
   const clearProgress = () => {
     result.hidden = true;
     rejectedList.replaceChildren();
     feedback.textContent = '';
-    usableCount.textContent = '0 of 5 usable reps';
+    usableCount.textContent = `0 of ${GOAL_REPS} usable reps`;
     finishButton.hidden = true;
     finishButton.disabled = true;
-    finishButton.textContent = 'Finish with 3 reps';
+    finishButton.textContent = `Finish with ${MIN_REPS} reps`;
     skipButton.hidden = true;
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
   };
@@ -120,6 +127,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   routineSelect.addEventListener('change', () => {
     showPlacement();
     clearProgress();
+    showExisting();
   });
 
   /** The routine and person a run was started for, so editing the form mid-run cannot change where it is saved. */
@@ -141,7 +149,15 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       message = `Could not save: ${error instanceof Error ? error.message : 'unknown error'}. Calibration not stored.`;
     }
     const status = root.querySelector('[data-save-status]');
-    if (mounted && status) status.textContent = message;
+    if (mounted && status) {
+      status.textContent = message;
+      if (message === 'Reference saved.') {
+        const next = document.createElement('a');
+        next.href = '#/test';
+        next.textContent = 'Test a surface';
+        status.after(next);
+      }
+    }
   };
 
   const unlock = () => {
@@ -161,15 +177,15 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     },
     onState(state) {
       skipButton.hidden = state !== 'resting';
-      finishButton.disabled = run.accepted < 3 || state === 'capturing' || state === 'done';
+      finishButton.disabled = run.accepted < MIN_REPS || state === 'capturing' || state === 'done';
     },
     onRep(rep, accepted) {
       if (isUsable(rep)) {
         dots[accepted - 1]?.setAttribute('data-state', 'accepted');
-        usableCount.textContent = `${accepted} of 5 usable reps`;
+        usableCount.textContent = `${accepted} of ${GOAL_REPS} usable reps`;
         finishButton.textContent = `Finish with ${accepted} reps`;
-        finishButton.disabled = accepted < 3 || run.state === 'capturing';
-        if (accepted >= 3) finishButton.hidden = false;
+        finishButton.disabled = accepted < MIN_REPS || run.state === 'capturing';
+        if (accepted >= MIN_REPS) finishButton.hidden = false;
       } else {
         const item = document.createElement('li');
         item.textContent = rejectMessage((rep.ok ? rep.issues : rep.reasons)[0]!);

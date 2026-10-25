@@ -324,6 +324,32 @@ describe('calibrate screen', () => {
     expect(finish.disabled).toBe(true);
   });
 
+  it('offers the test screen once the reference is saved', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: {} });
+    const { root } = mount(createReplaySource(traceOf(goodStream([]))), '#/calibrate', store);
+    await flush();
+
+    root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')?.click();
+    await flush();
+
+    expect(root.querySelector('[data-calibration-result] a')?.getAttribute('href')).toBe('#/test');
+  });
+
+  it('warns that calibrating again replaces the saved reference', async () => {
+    const store = createLocalStore(memoryStorage());
+    await store.savePerson({ id: 'person-1', name: 'Alex', references: { 'bridge-drop': { stats: bridgeStats(), reps: [] } } });
+    const { root } = mount(createReplaySource(traceOf([])), '#/calibrate', store);
+    await flush();
+    expect(root.querySelector('[data-existing-reference]')?.textContent).toBe('');
+
+    const routine = root.querySelector<HTMLSelectElement>('select[name="routine"]')!;
+    routine.value = 'bridge-drop';
+    routine.dispatchEvent(new Event('change'));
+
+    expect(root.querySelector('[data-existing-reference]')?.textContent).toContain('will replace');
+  });
+
   it('fills one dot per accepted rep, coaches each cue and shows the feature means', async () => {
     const { root, cues } = mount(createReplaySource(traceOf(goodStream([]))));
     expect(root.textContent).toContain('sternum');

@@ -371,6 +371,29 @@ describe('schema versioning and bad data', () => {
     expect(memory.getItem(KEY)).toBe(newer);
   });
 
+  it.each([
+    ['a v0 person without references', JSON.stringify({ people: [{ id: 'x' }], surfaces: [], tests: [] })],
+    [
+      'a v1 reference without stats',
+      JSON.stringify({
+        version: 1,
+        people: [{ id: 'x', name: 'A', references: { 'sit-drop': { reps: [] } } }],
+        surfaces: [],
+        tests: [],
+      }),
+    ],
+  ])('reads %s as empty, backs it up and lets the next save through', async (_name, bad) => {
+    const storage = memoryStorage();
+    storage.setItem(KEY, bad);
+    const store = createLocalStore(storage);
+
+    expect(await store.listPeople()).toEqual([]);
+    await store.savePerson(person('p1'));
+
+    expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(bad);
+    expect(await store.listPeople()).toEqual([person('p1')]);
+  });
+
   it('still saves when the corrupt-data backup does not fit', async () => {
     const memory = memoryStorage();
     memory.setItem(KEY, '{not json');

@@ -1,6 +1,7 @@
 import type { Coach } from '../../coach';
 import type { Person, ReferenceStats, Routine, Surface, SurfaceType, TestRecord } from '../../domain';
-import { rejectMessage } from '../../session';
+import { GOAL_REPS, MIN_REPS, rejectMessage } from '../../session';
+import type { SessionOutcome } from '../../session';
 import { compare, isUsable } from '../../signal';
 import { shortDeviceModel } from './metadata';
 import { PLACEMENT } from './placement';
@@ -10,8 +11,6 @@ import type { AppDeps } from './shell';
 import { caveatTexts, confidenceText, hardnessText, matchText, springinessText } from './wording';
 
 const SURFACE_TYPES: SurfaceType[] = ['mattress', 'couch', 'chair', 'cushion', 'pad'];
-const GOAL_REPS = 5;
-const MIN_REPS = 3;
 
 /** Collapses runs of spaces so "Blue  couch" and "Blue couch" are one surface. */
 const normalizeName = (name: string): string => name.trim().replace(/\s+/g, ' ');
@@ -20,7 +19,12 @@ const normalizeName = (name: string): string => name.trim().replace(/\s+/g, ' ')
 async function surfaceNamed(deps: AppDeps, name: string, type: SurfaceType): Promise<Surface> {
   const key = name.toLowerCase();
   const existing = (await deps.store.findSurfaces(name)).find((s) => normalizeName(s.name).toLowerCase() === key);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.type === type) return existing;
+    const retyped = { ...existing, type };
+    await deps.store.saveSurface(retyped);
+    return retyped;
+  }
   const surface: Surface = { id: deps.newId(), name, type };
   await deps.store.saveSurface(surface);
   return surface;
@@ -52,12 +56,12 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
         <p data-cue-text class="cue-panel__text" role="status" aria-live="polite"></p>
         <p data-rep-feedback role="status" aria-live="polite"></p>
         <p data-usable-count>0 of ${GOAL_REPS} usable reps</p>
-        <ol data-rep-dots aria-label="Accepted reps">${Array.from({ length: GOAL_REPS }, (_, i) => `<li data-state="pending">${i + 1}</li>`).join('')}</ol>
+        <ol class="repetition-rail" data-rep-dots aria-label="Accepted reps">${Array.from({ length: GOAL_REPS }, (_, i) => `<li data-state="pending">${i + 1}</li>`).join('')}</ol>
         <button class="button button--primary" type="button" data-action="start-test" disabled>Start test</button>
         <button class="button button--quiet" type="button" data-action="skip-rest" hidden>Skip rest</button>
         <button class="button button--quiet" type="button" data-action="finish-test" hidden disabled>Finish with ${MIN_REPS} reps</button>
         <p data-form-error role="alert"></p>
-        <section data-result aria-label="Test result" hidden></section>
+        <section data-result aria-label="Test result" aria-live="polite" hidden></section>
       </main>
     </div>
   `;
@@ -129,9 +133,16 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
     });
   profileSelect.addEventListener('change', () => {
     person = profiles.find((p) => p.id === profileSelect.value);
+    result.hidden = true;
     refresh();
   });
-  routineSelect.addEventListener('change', refresh);
+  routineSelect.addEventListener('change', () => {
+    result.hidden = true;
+    refresh();
+  });
+  surfaceInput.addEventListener('input', () => {
+    formError.textContent = '';
+  });
   refresh();
 
   const unlock = () => {
@@ -143,7 +154,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
     refresh();
   };
 
-  const showResult = (record: TestRecord, surfaceName: string, surfaceType: SurfaceType) => {
+  const showResult = (record: TestRecord, surfaceName: string, surfaceType: SurfaceType, outcome: SessionOutcome) => {
     const { verdict } = record;
     result.hidden = false;
     result.innerHTML = `
@@ -151,6 +162,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
       <p data-direction>${springinessText(verdict)}</p>
       <p data-hardness>${hardnessText(verdict)}</p>
       <p data-confidence>Confidence: ${confidenceText(verdict)}</p>
+      ${outcome === 'low-confidence' ? `<p data-low-confidence>You finished with fewer than ${GOAL_REPS} good reps.</p>` : ''}
       <ul data-caveats>${caveatTexts(verdict).map((c) => `<li>${c}</li>`).join('')}</ul>
       <p data-save-status role="status">Saving…</p>`;
     void (async () => {
@@ -210,6 +222,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
           },
           used.surfaceName,
           used.surfaceType,
+          outcome,
         );
       } catch {
         result.hidden = false;
