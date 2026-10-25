@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReferenceStats, Routine, Sample } from '../domain';
 import { expectedFeatures, synthRep } from '../testkit';
 import type { SynthOptions } from '../testkit';
-import { analyzeRep, assessHover, routineSpec } from './index';
+import { analyzeRep, assessHover, createPositionTracker, routineSpec } from './index';
 
 /** The still part of a synthetic rep: everything before the drop. */
 function hoverOf(opts: SynthOptions): Sample[] {
@@ -30,6 +30,7 @@ describe('routineSpec', () => {
     expect(spec.preRollS).toBeGreaterThanOrEqual(1);
     expect(spec.hoverMinS).toBeGreaterThanOrEqual(0.3);
     expect(spec.restS).toBe(20);
+    expect(spec.maxLeanDeg).toBeGreaterThan(0);
   });
 
   it('gives the bridge drop a longer capture than the sit-drop', () => {
@@ -197,6 +198,45 @@ describe('analyzeRep features against the analytic answers', () => {
       }
       expect(other.impactSpeed).toBeCloseTo(plain.impactSpeed, 6);
     }
+  });
+});
+
+describe('createPositionTracker', () => {
+  const max = routineSpec('sit-drop').maxLeanDeg;
+
+  it('confirms the position once when the phone is first upright', () => {
+    const tracker = createPositionTracker('sit-drop');
+    expect(tracker.update(20)).toEqual({ off: false, event: 'ok' });
+    expect(tracker.update(25)).toEqual({ off: false });
+  });
+
+  it('reports off once when the lean passes the limit, and stays quiet while off', () => {
+    const tracker = createPositionTracker('sit-drop');
+    tracker.update(20);
+    expect(tracker.update(max + 5)).toEqual({ off: true, event: 'off' });
+    expect(tracker.update(max + 10)).toEqual({ off: true });
+  });
+
+  it('needs a margin inside the limit before it confirms again', () => {
+    const tracker = createPositionTracker('sit-drop');
+    tracker.update(max + 5);
+    expect(tracker.update(max - 2)).toEqual({ off: true });
+    expect(tracker.update(max - 6)).toEqual({ off: false, event: 'ok' });
+  });
+
+  it('never reports a bridge drop off', () => {
+    expect(createPositionTracker('bridge-drop').update(90).off).toBe(false);
+  });
+});
+
+describe('analyzeRep plausibility', () => {
+  it('drops a rep whose impact speed is below 0.2 m/s as no real drop', () => {
+    const result = analyzeRep(synthRep({ impactSpeed: 0.12, seed: 4 }));
+    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
+  });
+
+  it('still accepts a slow soft-surface drop of 0.3 m/s', () => {
+    expect(analyzeRep(synthRep({ impactSpeed: 0.3, seed: 4 })).ok).toBe(true);
   });
 });
 

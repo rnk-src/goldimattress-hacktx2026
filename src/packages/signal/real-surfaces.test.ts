@@ -13,6 +13,20 @@ function verdict(reference: string, tested: string): Verdict {
   return compare(traces(tested).map((t) => analyzeRep(t, built.ref)), built.ref);
 }
 
+describe('real hard chair with the phone off the sternum', () => {
+  const reps = () => loadFixture('hard-chair-set1').traces.map((t) => analyzeRep(t));
+
+  it('drops the rep whose impact speed reads 0.10 m/s instead of accepting it at full weight', () => {
+    const rep = reps()[0]!;
+    expect(rep.ok === false && rep.reasons).toEqual(['no-drop-found']);
+  });
+
+  it('keeps the shaky rep with no real sit unusable', () => {
+    const rep = reps()[1]!;
+    expect(rep.ok && rep.weight).toBeLessThan(0.5);
+  });
+});
+
 describe('real surfaces, springiness', () => {
   it('reads the mesh chair as bouncier than the desk chair, with enough usable reps', () => {
     const v = verdict('desk-chair-set1', 'mesh-chair-set1');

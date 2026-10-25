@@ -1,5 +1,5 @@
 import type { Cue, CueKey, LiveState, ReferenceStats, RepResult, Routine, Sample } from '../../domain';
-import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, isUsable, routineSpec } from '../../signal';
+import { GRAVITY, IMPACT_EXCESS, analyzeRep, assessHover, createPositionTracker, isUsable, routineSpec } from '../../signal';
 import { rejectMessage } from './messages';
 
 export interface SessionOptions {
@@ -29,6 +29,8 @@ const EPS = 1e-6;
 const CUES: Record<CueKey, Cue> = {
   'place-phone': { key: 'place-phone', text: 'Place the phone on your body, then hold still.' },
   'hold-still': { key: 'hold-still', text: 'Hold still.' },
+  'phone-off': { key: 'phone-off', text: 'Hold the phone upright against your breastbone, screen facing out.' },
+  'phone-ok': { key: 'phone-ok', text: 'Phone position good. Hold still.' },
   'drop-when-ready': { key: 'drop-when-ready', text: 'Relax your legs and drop.', beep: 'ready' },
   captured: { key: 'captured', text: 'Drop detected. Stay still and hold your breath.', beep: 'captured' },
   'rep-accepted': { key: 'rep-accepted', text: 'Good rep.', beep: 'accepted' },
@@ -47,6 +49,7 @@ export function createRepSession(opts: SessionOptions): RepSession {
   let aborted = false;
   /** Time of the first evaluation in the current unbroken run of still hovers. */
   let stillSince: number | undefined;
+  const position = createPositionTracker(opts.routine);
   let state: LiveState = 'idle';
   let lastCue: CueKey | undefined;
   let buffer: Sample[] = [];
@@ -145,6 +148,14 @@ export function createRepSession(opts: SessionOptions): RepSession {
         cue('hold-still', out);
         return out;
       }
+      const placed = position.update(hover.leanDeg);
+      if (placed.off) {
+        stillSince = undefined;
+        setState('holding', out);
+        cue('phone-off', out);
+        return out;
+      }
+      if (placed.event === 'ok') cue('phone-ok', out);
       // A wobbling hover can pass single windows, so arm only after a sustained run of still ones.
       stillSince ??= s.t;
       if (s.t - stillSince < spec.hoverMinS - EPS) return out;
