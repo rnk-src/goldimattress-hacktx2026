@@ -1,26 +1,13 @@
 import { startApp } from './packages/app';
 import { createBrowserCoach } from './packages/coach';
 import { createDeviceMotionSource } from './packages/sensors';
-import type { Store } from './packages/store';
+import { createLocalStore } from './packages/store';
 
 type MotionEventConstructor = typeof DeviceMotionEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 };
 
 type AudioContextConstructor = new () => AudioContext;
-
-// Raw capture has no persistence yet; the local store arrives with a later ticket.
-const unavailableStore = (): Store => {
-  const notReady = () => Promise.reject(new Error('Local storage is not available in raw capture.'));
-  return {
-    listPeople: notReady,
-    savePerson: notReady,
-    findSurfaces: notReady,
-    saveSurface: notReady,
-    saveTest: notReady,
-    listTests: notReady,
-  };
-};
 
 const motionEvent = window.DeviceMotionEvent as MotionEventConstructor | undefined;
 const source = motionEvent
@@ -52,7 +39,7 @@ if (!window.location.hash) window.location.hash = '#/permission';
 
 const unmount = startApp(root, {
   source,
-  store: unavailableStore(),
+  store: createLocalStore(),
   makeCoach,
   now: () => new Date(),
   device: navigator.userAgent,
