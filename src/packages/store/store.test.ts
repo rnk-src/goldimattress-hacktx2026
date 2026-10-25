@@ -14,6 +14,11 @@ const verdict: Verdict = {
   bouncier: false,
   match: 100,
   perFeatureZ: { peakOverV: 0, stopTime: 0, bounceRatio: 0, settleTime: 0 },
+  hardnessInterval: [0, 0],
+  springinessInterval: [0, 0],
+  confidence: 'confident',
+  hardnessReliable: false,
+  caveats: [],
 };
 const record = (id: string, personId: string, surfaceId: string): TestRecord => ({
   id,

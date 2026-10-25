@@ -112,6 +112,11 @@ export interface ReferenceStats {
 
 export type Label = 'just-right' | 'slightly' | 'much';
 
+/** How far a verdict can be trusted. */
+export type Confidence = 'confident' | 'close-call' | 'not-enough-data';
+/** Something that makes the verdict less reliable than the number says. */
+export type Caveat = 'lean-differs' | 'rest-skipped';
+
 export interface Verdict {
   hardness: number;
   springiness: number;
@@ -122,6 +127,13 @@ export interface Verdict {
   /** 0..100. */
   match: number;
   perFeatureZ: Record<FeatureName, number>;
+  /** One standard error either side of the score. */
+  hardnessInterval: [number, number];
+  springinessInterval: [number, number];
+  confidence: Confidence;
+  /** False until the hardness axis is verified across surfaces; then the label and match ignore it. */
+  hardnessReliable: boolean;
+  caveats: Caveat[];
 }
 
 export interface Person {
