@@ -89,7 +89,7 @@ export function createBrowserCoach(injected?: CoachEnv): Coach {
   return {
     play(cue) {
       if (muted) return;
-      if (env.speech) {
+      if (env.speech && cue.text.trim() !== '') {
         const utterance =
           typeof globalThis.SpeechSynthesisUtterance === 'function'
             ? new SpeechSynthesisUtterance(cue.text)
