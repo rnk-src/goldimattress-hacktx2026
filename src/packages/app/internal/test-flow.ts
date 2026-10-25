@@ -12,6 +12,7 @@ import { brandHeader } from './shell';
 import type { AppDeps } from './shell';
 import { caveatTexts, confidenceText, hardnessText, indexText, matchText, springinessText } from './wording';
 
+const MAX_SUGGESTIONS = 8;
 const SURFACE_TYPES: SurfaceType[] = ['mattress', 'couch', 'chair', 'cushion', 'pad'];
 
 /** Collapses runs of spaces so "Blue  couch" and "Blue couch" are one surface. */
@@ -67,7 +68,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
         </fieldset>
         <p data-rig-line></p>
         <div class="field-grid">
-          <label><span data-surface-label>Surface name</span><input name="surface" maxlength="80" autocomplete="off"></label>
+          <label><span data-surface-label>Surface name</span><input name="surface" maxlength="80" autocomplete="off" list="surface-options"><datalist id="surface-options"></datalist></label>
           <label><span>Type</span><select name="type">${SURFACE_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}</select></label>
         </div>
         <section data-placement aria-label="Phone placement"></section>
@@ -105,6 +106,7 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   const modeRadios = Array.from(root.querySelectorAll<HTMLInputElement>('input[name="mode"]'));
   const rigLine = q('[data-rig-line]');
   const surfaceLabel = q('[data-surface-label]');
+  const surfaceOptions = q<HTMLDataListElement>('#surface-options');
   const lockedFields = [profileSelect, routineSelect, legacyToggle, surfaceInput, typeSelect, ...modeRadios];
 
   let mounted = true;
@@ -201,10 +203,21 @@ export function testView(root: HTMLElement, deps: AppDeps, getCoach: () => Coach
   surfaceInput.addEventListener('input', () => {
     formError.textContent = '';
     const name = normalizeName(surfaceInput.value);
-    // Show the type a known surface already has, so retesting it does not retype it by accident.
-    void knownSurface(deps, name)
-      .then((known) => {
-        if (mounted && !running && known && normalizeName(surfaceInput.value) === name) typeSelect.value = known.type;
+    // One lookup serves both the suggestions and the type of a surface the name already matches.
+    void deps.store
+      .findSurfaces(name)
+      .then((found) => {
+        if (!mounted || normalizeName(surfaceInput.value) !== name) return;
+        surfaceOptions.replaceChildren(
+          ...found.slice(0, MAX_SUGGESTIONS).map((surface) => {
+            const option = document.createElement('option');
+            option.value = surface.name;
+            return option;
+          }),
+        );
+        // Show the type a known surface already has, so retesting it does not retype it by accident.
+        const known = found.find((s) => normalizeName(s.name).toLowerCase() === name.toLowerCase());
+        if (!running && known) typeSelect.value = known.type;
       })
       .catch(() => undefined);
   });

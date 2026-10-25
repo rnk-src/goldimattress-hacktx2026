@@ -1,0 +1,13 @@
+{
+  "name": "GoldiMattress",
+  "short_name": "GoldiMattress",
+  "description": "Drop a weighted rig on a mattress or cushion and see whether it is too hard, too soft or just right for you.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#dce9eb",
+  "theme_color": "#172326",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
