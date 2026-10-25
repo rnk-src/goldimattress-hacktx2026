@@ -261,6 +261,7 @@ describe('capacity', () => {
 
 describe('schema versioning and bad data', () => {
   const KEY = 'goldimattress';
+  const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
   const features = { peakOverV: 20, stopTime: 0.1, bounceRatio: 0.4, settleTime: 1.5 };
 
   it('stamps what it writes with schema version 1', async () => {
@@ -342,4 +343,14 @@ describe('schema versioning and bad data', () => {
       expect(await store.listPeople()).toEqual([person('p1')]);
     },
   );
+
+  it('backs up corrupt data before a save replaces it', async () => {
+    const storage = memoryStorage();
+    const corrupt = '{not json';
+    storage.setItem(KEY, corrupt);
+
+    await createLocalStore(storage).savePerson(person('p1'));
+
+    expect(storage.getItem(CORRUPT_BACKUP_KEY)).toBe(corrupt);
+  });
 });

@@ -1,5 +1,5 @@
 import { decodePerson, decodeTest, encodePerson, encodeTest } from './codec';
-import { readStored } from './migrate';
+import { readStored, readStoredState } from './migrate';
 import type { StoredData } from './migrate';
 import type { Store, StorageLike } from './types';
 
@@ -18,6 +18,7 @@ const isQuotaError = (e: unknown): boolean => {
 };
 
 const KEY = 'goldimattress';
+const CORRUPT_BACKUP_KEY = 'goldimattress-corrupt-backup';
 
 /** Replaces the entry with the same id in place, or appends. */
 function upsert<T extends { id: string }>(list: T[], item: T): void {
@@ -32,17 +33,20 @@ function upsert<T extends { id: string }>(list: T[], item: T): void {
  */
 export function createLocalStore(storage: StorageLike = localStorage): Store {
   const load = (): StoredData => readStored(storage.getItem(KEY));
-  const save = (data: StoredData) => {
+  const save = (data: StoredData, corruptBackup?: string) => {
     try {
+      if (corruptBackup !== undefined) storage.setItem(CORRUPT_BACKUP_KEY, corruptBackup);
       storage.setItem(KEY, JSON.stringify(data));
     } catch (e) {
       throw isQuotaError(e) ? new StoreFullError({ cause: e }) : e;
     }
   };
   const change = async (edit: (data: StoredData) => void) => {
-    const data = load();
+    const raw = storage.getItem(KEY);
+    const loaded = readStoredState(raw);
+    const data = loaded.data;
     edit(data);
-    save(data);
+    save(data, loaded.corrupt ? raw! : undefined);
   };
 
   return {

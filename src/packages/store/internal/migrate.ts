@@ -66,19 +66,21 @@ function migrateV0(old: { people: Person[]; surfaces: Surface[]; tests: TestReco
  * shortcut: corrupt data and a version newer than this build both read as empty and are overwritten
  * by the next save, with no backup. Keep the raw value under a second key if that ever bites.
  */
-export function readStored(raw: string | null): StoredData {
-  if (raw === null) return emptyStored();
+export function readStoredState(raw: string | null): { data: StoredData; corrupt: boolean } {
+  if (raw === null) return { data: emptyStored(), corrupt: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return emptyStored();
+    return { data: emptyStored(), corrupt: true };
   }
   if (typeof parsed !== 'object' || parsed === null || !isLists(parsed as Record<string, unknown>)) {
-    return emptyStored();
+    return { data: emptyStored(), corrupt: true };
   }
   const data = parsed as Record<string, unknown>;
-  if (data.version === undefined) return migrateV0(data as Parameters<typeof migrateV0>[0]);
-  if (data.version === 1) return isValidV1(data) ? (data as unknown as StoredData) : emptyStored();
-  return emptyStored();
+  if (data.version === undefined) return { data: migrateV0(data as Parameters<typeof migrateV0>[0]), corrupt: false };
+  if (data.version === 1 && isValidV1(data)) return { data: data as unknown as StoredData, corrupt: false };
+  return { data: emptyStored(), corrupt: true };
 }
+
+export const readStored = (raw: string | null): StoredData => readStoredState(raw).data;
