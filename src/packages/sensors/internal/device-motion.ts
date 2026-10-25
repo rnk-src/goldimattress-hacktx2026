@@ -1,4 +1,5 @@
 import type { Sample } from '../../domain';
+import { createRateMeter } from './rate-meter';
 import type { Access, SensorSource } from './source';
 
 export interface MotionEnv {
@@ -6,13 +7,25 @@ export interface MotionEnv {
   requestPermission?: () => Promise<'granted' | 'denied'>;
 }
 
-export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
+type MotionEventConstructor = { requestPermission?: () => Promise<'granted' | 'denied'> };
+
+/** The browser's own motion API, or null where DeviceMotionEvent does not exist. */
+function detectBrowserEnv(): MotionEnv | null {
+  const ctor = (window as { DeviceMotionEvent?: MotionEventConstructor }).DeviceMotionEvent;
+  if (!ctor) return null;
+  const { requestPermission } = ctor;
+  return {
+    target: window,
+    ...(requestPermission ? { requestPermission: () => requestPermission.call(ctor) } : {}),
+  };
+}
+
+export function createDeviceMotionSource(injected?: MotionEnv): SensorSource {
+  const env = injected ?? detectBrowserEnv();
   let access: Access | null = null;
   let onSample: ((sample: Sample) => void) | null = null;
-  let emitted = 0;
-  let firstT = 0;
-  let lastT = 0;
   let intervalMs: number | null = null;
+  const meter = createRateMeter();
   const onMotion = (event: Event) => {
     const motion = event as Event & {
       interval?: number;
@@ -32,9 +45,7 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
       return;
     }
     const t = motion.timeStamp / 1000;
-    if (emitted === 0) firstT = t;
-    lastT = t;
-    emitted += 1;
+    meter.add(t);
     if (typeof motion.interval === 'number') intervalMs = motion.interval;
     onSample?.({
       t,
@@ -46,17 +57,16 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
 
   return {
     async requestAccess() {
-      access = env?.requestPermission ? await env.requestPermission() : env ? 'granted' : 'unsupported';
+      if (!env) access = 'unsupported';
+      else access = env.requestPermission ? await env.requestPermission() : 'granted';
       return access;
     },
     start(callback) {
-      if (access !== 'granted') throw new Error('Motion access has not been granted');
+      if (access !== 'granted' || !env) throw new Error('Motion access has not been granted');
       onSample = callback;
-      emitted = 0;
-      firstT = 0;
-      lastT = 0;
+      meter.reset();
       intervalMs = null;
-      env!.target.addEventListener('devicemotion', onMotion);
+      env.target.addEventListener('devicemotion', onMotion);
     },
     stop() {
       env?.target.removeEventListener('devicemotion', onMotion);
@@ -66,8 +76,7 @@ export function createDeviceMotionSource(env?: MotionEnv): SensorSource {
       return intervalMs;
     },
     get sampleRateHz() {
-      if (emitted < 20 || lastT <= firstT) return null;
-      return (emitted - 1) / (lastT - firstT);
+      return meter.hz;
     },
   };
 }

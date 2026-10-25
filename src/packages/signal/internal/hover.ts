@@ -1,4 +1,5 @@
 import type { HoverAssessment, ReferenceStats, RejectReason, Routine, Sample } from '../../domain';
+import { GRAVITY } from './constants';
 import { magnitude, std } from './math';
 import { routineSpec } from './routine';
 
@@ -17,8 +18,9 @@ function leanOf(window: readonly Sample[], routine: Routine): number {
   const mean = (key: 'ax' | 'ay' | 'az') => window.reduce((sum, s) => sum + s[key], 0) / window.length;
   const m = { ax: mean('ax'), ay: mean('ay'), az: mean('az') };
   const length = magnitude(m);
-  if (!(length > 0)) return 0;
-  return (Math.acos(Math.min(1, Math.abs(m[LEAN_AXIS[routine]]) / length)) * 180) / Math.PI;
+  const deg = (Math.acos(Math.min(1, Math.abs(m[LEAN_AXIS[routine]]) / length)) * 180) / Math.PI;
+  // Zero or non-finite samples have no direction, so the lean is 0.
+  return Number.isFinite(deg) ? deg : 0;
 }
 
 /**
@@ -35,7 +37,7 @@ export function assessHover(
   const coveredS = n < 2 ? 0 : ((window[n - 1]!.t - window[0]!.t) * n) / (n - 1);
   const meanMag = n === 0 ? 0 : window.reduce((sum, s) => sum + magnitude(s), 0) / n;
   const still =
-    Math.abs(meanMag - 9.81) <= HOVER_G_TOL &&
+    Math.abs(meanMag - GRAVITY) <= HOVER_G_TOL &&
     jitter <= MAX_JITTER && coveredS >= routineSpec(routine).hoverMinS - 1e-6;
   const leanDeg = leanOf(window, routine);
   const reasons: RejectReason[] = still ? [] : ['not-still'];
