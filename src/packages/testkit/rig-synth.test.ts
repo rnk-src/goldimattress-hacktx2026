@@ -72,7 +72,23 @@ describe('expectedFeatures for rig-drop', () => {
   });
 });
 
+describe('expectedFeatures ignores a rig failure', () => {
+  it.each([
+    ['height-error', 1.5],
+    ['hand-drag', 0.3],
+  ] as const)('"%s" gives the clean-rep answer', (failure, failureSize) => {
+    const clean = expectedFeatures({ routine: 'rig-drop', dropHeightCm: 10 });
+    expect(expectedFeatures({ routine: 'rig-drop', dropHeightCm: 10, failure, failureSize })).toEqual(clean);
+  });
+});
+
 describe('synthRep rig-drop failures', () => {
+  it('"hand-drag" rejects a failureSize outside [0, 1)', () => {
+    for (const failureSize of [1, 1.5, -0.2]) {
+      expect(() => rig({ failure: 'hand-drag', failureSize })).toThrow(RangeError);
+    }
+  });
+
   it('"tilt" holds the phone failureSize degrees off flat for the whole trace', () => {
     const { samples } = rig({ dropHeightCm: 5, failure: 'tilt', failureSize: 12 });
     expect(angleFromZ(samples[0]!)).toBeCloseTo(12, 6);
