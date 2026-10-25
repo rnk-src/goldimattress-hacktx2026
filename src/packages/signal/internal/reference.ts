@@ -1,6 +1,6 @@
 import type { ReferenceStats, RepResult, Routine } from '../../domain';
-import { FEATURES } from './features-table';
-import { relFloorOf } from './routine';
+import { featuresOf } from './features-table';
+import { profileOf } from './routine';
 import { type UsableRep, columnStats, summarize, usableReps } from './summarize';
 
 const MIN_REPS = 3;
@@ -11,8 +11,8 @@ const OUTLIER_MADS = 3;
 type Result = { ok: true; ref: ReferenceStats; dropped: number[] } | { ok: false; reason: 'too-few' };
 
 /** What a rep is judged by against the person's other reps: the scored features, lean and impact speed. */
-const JUDGED: readonly { value: (r: UsableRep) => number; absFloor: number }[] = [
-  ...FEATURES.filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
+const judgedOf = (routine: Routine): readonly { value: (r: UsableRep) => number; absFloor: number }[] => [
+  ...featuresOf(routine).filter(({ axis }) => axis !== null).map(({ name, absFloor }) => ({
     value: (r: UsableRep) => r.features[name],
     absFloor,
   })),
@@ -25,9 +25,9 @@ const JUDGED: readonly { value: (r: UsableRep) => number; absFloor: number }[] =
  * How many scaled MADs the rep's farthest judged value sits from the centre, floored like the verdict.
  * The judge uses the same `columnStats` centre as the reference and the verdict, so a rep is judged from the value it would shift.
  */
-function outlierScore(rep: UsableRep, kept: readonly UsableRep[], relFloor: number): number {
+function outlierScore(rep: UsableRep, kept: readonly UsableRep[], relFloor: number, judged: ReturnType<typeof judgedOf>): number {
   return Math.max(
-    ...JUDGED.map(({ value, absFloor }) => {
+    ...judged.map(({ value, absFloor }) => {
       const s = columnStats(kept.map(value), kept.map((r) => r.weight));
       return Math.abs(value(rep) - s.center) / Math.max(s.mad, relFloor * Math.abs(s.center), absFloor);
     }),
@@ -44,12 +44,13 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
   let kept = usableReps(reps);
   if (kept.length < MIN_REPS) return { ok: false, reason: 'too-few' };
 
-  const relFloor = relFloorOf(routine);
+  const { relFloor } = profileOf(routine).model;
+  const judged = judgedOf(routine);
   const dropped: UsableRep[] = [];
   if (kept.length >= DROP_FROM_REPS) {
     // Farthest first, one at a time, so a dropped rep stops skewing the median that judges the next.
     while (kept.length > MIN_REPS) {
-      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloor) }));
+      const scored = kept.map((r) => ({ r, score: outlierScore(r, kept, relFloor, judged) }));
       const worst = scored.reduce((a, b) => (b.score > a.score ? b : a));
       if (worst.score <= OUTLIER_MADS) break;
       dropped.push(worst.r);

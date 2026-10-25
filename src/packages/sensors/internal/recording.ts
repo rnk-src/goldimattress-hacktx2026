@@ -58,7 +58,8 @@ function parseSample(value: unknown, path: string): Sample {
   };
 }
 
-function parseRig(value: unknown, path: string): RigSetup {
+/** Checks a rig setup read from a file or the capture form. Throws `RecordingFormatError`. */
+export function parseRig(value: unknown, path: string): RigSetup {
   const obj = object(value, path);
   const base = array(obj, 'baseCm', path);
   if (base.length !== 2 || base.some((n) => typeof n !== 'number' || !Number.isFinite(n) || n <= 0)) {

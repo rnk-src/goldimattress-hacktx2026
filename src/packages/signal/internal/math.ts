@@ -98,3 +98,12 @@ export function weightedTrimmedMean(xs: readonly number[], ws: readonly number[]
   }
   return sum / kept;
 }
+
+/** `x` limited to the range lo..hi. */
+export const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
+
+/** Mean of each axis over `samples`. NaN on each axis when empty. */
+export function meanVector(samples: readonly Pick<Sample, 'ax' | 'ay' | 'az'>[]): Pick<Sample, 'ax' | 'ay' | 'az'> {
+  const mean = (key: 'ax' | 'ay' | 'az') => samples.reduce((sum, s) => sum + s[key], 0) / samples.length;
+  return { ax: mean('ax'), ay: mean('ay'), az: mean('az') };
+}
