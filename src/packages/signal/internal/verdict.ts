@@ -1,19 +1,8 @@
 import type { FeatureName, Label, ReferenceStats, RepResult, Verdict } from '../../domain';
-import { FEATURE_NAMES } from './feature-names';
+import { FEATURES } from './features-table';
 
 /** Share of |μ_ref| below which a spread is treated as noise. */
 const REL_FLOOR = 0.08;
-
-/**
- * Absolute σ floors, in each feature's unit. Needed when μ_ref is near 0 (dead foam: bounceRatio ≈ 0).
- * shortcut: starting values, not tuned on real G2 fixtures; peakOverV (1/s) is a guess of ~2.5% of a typical 20/s. Tune on G2 recordings.
- */
-const ABS_FLOOR: Record<FeatureName, number> = {
-  peakOverV: 0.5,
-  stopTime: 0.02,
-  bounceRatio: 0.03,
-  settleTime: 0.02,
-};
 
 function label(score: number): Label {
   const a = Math.abs(score);
@@ -27,15 +16,19 @@ export function compare(reps: readonly RepResult[], ref: ReferenceStats): Verdic
   if (ok.some((r) => r.trace.routine !== ref.routine)) {
     throw new RangeError(`rep routine does not match reference routine ${ref.routine}`);
   }
-  const z = {} as Record<FeatureName, number>;
-  for (const k of FEATURE_NAMES) {
-    const mean = ok.reduce((s, r) => s + r.features[k], 0) / ok.length;
-    const { mean: mu, std } = ref.features[k];
-    const sigmaEff = Math.max(std, REL_FLOOR * Math.abs(mu), ABS_FLOOR[k]);
-    z[k] = (mean - mu) / sigmaEff;
+  const z: Partial<Record<FeatureName, number>> = {};
+  const axes = { hardness: [] as number[], springiness: [] as number[] };
+  for (const { name, absFloor, axis, sign } of FEATURES) {
+    const mean = ok.reduce((s, r) => s + r.features[name], 0) / ok.length;
+    const { mean: mu, std } = ref.features[name];
+    const sigmaEff = Math.max(std, REL_FLOOR * Math.abs(mu), absFloor);
+    const value = (mean - mu) / sigmaEff;
+    z[name] = value;
+    axes[axis].push(sign * value);
   }
-  const hardness = (z.peakOverV - z.stopTime) / 2;
-  const springiness = (z.bounceRatio + z.settleTime) / 2;
+  const average = (xs: readonly number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const hardness = average(axes.hardness);
+  const springiness = average(axes.springiness);
   return {
     hardness,
     springiness,
@@ -44,6 +37,6 @@ export function compare(reps: readonly RepResult[], ref: ReferenceStats): Verdic
     firmer: hardness > 0,
     bouncier: springiness > 0,
     match: 100 * Math.exp(-(hardness ** 2 + springiness ** 2) / 8),
-    perFeatureZ: z,
+    perFeatureZ: z as Record<FeatureName, number>,
   };
 }

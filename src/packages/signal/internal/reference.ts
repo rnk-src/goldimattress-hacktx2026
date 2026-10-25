@@ -1,5 +1,5 @@
 import type { FeatureStats, ReferenceStats, RepResult, Routine } from '../../domain';
-import { FEATURE_NAMES } from './feature-names';
+import { FEATURES } from './features-table';
 import { std } from './math';
 
 const MIN_REPS = 5;
@@ -42,8 +42,9 @@ export function buildReference(reps: readonly RepResult[], routine: Routine): Re
     return { ok: false, reason: 'lean-spread', outliers: worstFirst(reps, (r) => r.leanDeg) };
   }
 
-  const features = {} as ReferenceStats['features'];
-  for (const k of FEATURE_NAMES) features[k] = stats(ok.map((r) => r.features[k]));
+  const features = Object.fromEntries(
+    FEATURES.map(({ name }) => [name, stats(ok.map((r) => r.features[name]))]),
+  ) as ReferenceStats['features'];
   return {
     ok: true,
     ref: {
