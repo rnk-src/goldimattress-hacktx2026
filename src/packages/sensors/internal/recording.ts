@@ -1,4 +1,4 @@
-import type { Recording, Routine, Sample, Trace } from '../../domain';
+import type { Recording, RigSetup, Routine, Sample, Trace } from '../../domain';
 
 /** Thrown by `parseRecording`. `path` names the bad field, e.g. `traces[0].samples`. */
 export class RecordingFormatError extends Error {
@@ -11,7 +11,7 @@ export class RecordingFormatError extends Error {
   }
 }
 
-const routines: readonly Routine[] = ['sit-drop', 'bridge-drop'];
+const routines: readonly Routine[] = ['sit-drop', 'bridge-drop', 'rig-drop'];
 
 type Obj = Record<string, unknown>;
 
@@ -58,6 +58,24 @@ function parseSample(value: unknown, path: string): Sample {
   };
 }
 
+function parseRig(value: unknown, path: string): RigSetup {
+  const obj = object(value, path);
+  const base = array(obj, 'baseCm', path);
+  if (base.length !== 2 || base.some((n) => typeof n !== 'number' || !Number.isFinite(n))) {
+    throw new RecordingFormatError(`${path}.baseCm`, 'expected two finite numbers');
+  }
+  const spot = string(obj, 'spot', path);
+  if (spot !== 'center' && spot !== 'seat-middle' && spot !== 'other') {
+    throw new RecordingFormatError(`${path}.spot`, `unknown spot '${spot}'`);
+  }
+  return {
+    massKg: number(obj, 'massKg', path),
+    baseCm: [base[0] as number, base[1] as number],
+    dropHeightCm: number(obj, 'dropHeightCm', path),
+    spot,
+  };
+}
+
 function parseTrace(value: unknown, path: string): Trace {
   const obj = object(value, path);
   const routine = string(obj, 'routine', path);
@@ -72,13 +90,15 @@ function parseTrace(value: unknown, path: string): Trace {
       throw new RecordingFormatError(`${path}.samples[${i}].t`, 'times must strictly increase');
     }
   });
-  return {
+  const trace: Trace = {
     routine: routine as Routine,
     sampleRateHz,
     device: string(obj, 'device', path),
     startedAt: string(obj, 'startedAt', path),
     samples,
   };
+  if (obj.rig !== undefined) trace.rig = parseRig(obj.rig, `${path}.rig`);
+  return trace;
 }
 
 /** Validates untrusted JSON. Throws `RecordingFormatError` naming the first bad field path. */
