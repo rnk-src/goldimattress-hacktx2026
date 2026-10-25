@@ -52,6 +52,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
         <section data-placement aria-label="Phone placement"></section>
         <p data-cue-text class="cue-panel__text" role="status" aria-live="polite"></p>
         <p data-rep-feedback role="status" aria-live="polite"></p>
+        <p data-usable-count>0 of 5 usable reps</p>
         <ol data-rep-dots aria-label="Accepted reps">
           ${Array.from({ length: CALIBRATION_REPS }, (_, i) => `<li data-state="pending"><span>${i + 1}</span></li>`).join('')}
         </ol>
@@ -70,6 +71,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
   const cueText = root.querySelector<HTMLElement>('[data-cue-text]')!;
   const feedback = root.querySelector<HTMLElement>('[data-rep-feedback]')!;
   const dots = Array.from(root.querySelectorAll<HTMLElement>('[data-rep-dots] li'));
+  const usableCount = root.querySelector<HTMLElement>('[data-usable-count]')!;
   const rejectedList = root.querySelector<HTMLElement>('[data-rejected-reps]')!;
   const button = root.querySelector<HTMLButtonElement>('[data-action="start-calibration"]')!;
   const finishButton = root.querySelector<HTMLButtonElement>('[data-action="finish-calibration"]')!;
@@ -115,6 +117,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
     result.hidden = true;
     rejectedList.replaceChildren();
     feedback.textContent = '';
+    usableCount.textContent = '0 of 5 usable reps';
     finishButton.hidden = true;
     finishButton.disabled = true;
     dots.forEach((dot) => dot.setAttribute('data-state', 'pending'));
@@ -146,6 +149,7 @@ export function calibrateView(root: HTMLElement, deps: AppDeps, getCoach: () => 
       } else if (event.kind === 'rep') {
         if (isUsable(event.result)) {
           dots[(session?.accepted ?? 1) - 1]?.setAttribute('data-state', 'accepted');
+          usableCount.textContent = `${session?.accepted ?? 0} of 5 usable reps`;
           if ((session?.accepted ?? 0) >= 3) {
             finishButton.hidden = false;
             finishButton.disabled = false;
