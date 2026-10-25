@@ -34,6 +34,12 @@ const RISE_WITHIN_S = 0.4;
 const MAX_BRIDGED_SHARE = 0.25;
 /** Slack for float error in sample times, s. */
 const EPS = 1e-6;
+/**
+ * A drop slower than this is not a drop, m/s. Real accepted reps measured 0.35 to 1.13; a rep that read 0.10 had
+ * a plausible shape but a nonsense bounce ratio.
+ * shortcut: from three real sets, re-check with softer surfaces.
+ */
+const MIN_IMPACT_SPEED = 0.2;
 /** Below this rate the impact is too coarse to measure, Hz. */
 const MIN_RATE_HZ = 40;
 /** |a| below this long enough after the impact means the mass left the surface, m/s². */
@@ -180,7 +186,7 @@ function measure(
   leanDeg: number,
 ) {
   const impactSpeed = impactSpeedOf(trace, mags, descentStart, impact);
-  if (!(impactSpeed > 0 && Number.isFinite(impactSpeed))) return null;
+  if (!(impactSpeed >= MIN_IMPACT_SPEED && Number.isFinite(impactSpeed))) return null;
   const features = repFeatures(trace.samples, impact, impactSpeed);
   return features === null ? null : { features, impactSpeed, leanDeg };
 }

@@ -93,10 +93,9 @@ describe('analyzeRep on the real couch set', () => {
     expect([1, 2, 4].map((i) => verdictOf(t[i]!))).toEqual(['ok', 'ok', 'ok']);
   });
 
-  it('makes the rep with a bump in the hover unusable, naming not-still', () => {
-    const rep = accepted(couch()[0]!);
-    expect(rep.weight).toBeLessThan(0.5);
-    expect(rep.issues).toContain('not-still');
+  it('drops the rep with a bump in the hover, since its impact speed reads 0.13 m/s', () => {
+    const result = analyzeRep(couch()[0]!);
+    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
   });
 
   it('keeps the rep whose legs were still moving usable at a lower weight', () => {

@@ -82,6 +82,8 @@ export interface RoutineSpec {
   preRollS: number;
   captureS: number;
   restS: number;
+  /** Hover lean past this many degrees from the phone's upright axis means the phone is not on the body part that drops. */
+  maxLeanDeg: number;
 }
 
 export interface FeatureStats {
@@ -168,6 +170,8 @@ export type LiveState =
 export type CueKey =
   | 'place-phone'
   | 'hold-still'
+  | 'phone-off'
+  | 'phone-ok'
   | 'drop-when-ready'
   | 'captured'
   | 'rep-accepted'
