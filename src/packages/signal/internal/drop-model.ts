@@ -213,14 +213,16 @@ const body: DropModel = {
   quality: ({ jitter, stopTime }, ref) => scoreRep({ jitter, stopTime }, ref),
 };
 
+/** Nominal release height in m, from the trace rig or the default rig. */
+const rigHeightM = (trace: Trace) => (trace.rig ?? DEFAULT_RIG).dropHeightCm / 100;
+
 const freeFall: DropModel = {
   findDrop: freeFallDrop,
-  impactSpeed: (trace) =>
-    Math.sqrt(2 * GRAVITY * (((trace.rig ?? DEFAULT_RIG).dropHeightCm) / 100)),
+  impactSpeed: (trace) => Math.sqrt(2 * GRAVITY * rigHeightM(trace)),
   quality({ trace, seg, jitter }, ref) {
     // A zero stop time cannot be a caught landing, so scoreRep gives the jitter factor alone.
     const base = scoreRep({ jitter, stopTime: 0 }, ref);
-    const expectedS = Math.sqrt((2 * (trace.rig ?? DEFAULT_RIG).dropHeightCm) / 100 / GRAVITY);
+    const expectedS = Math.sqrt((2 * rigHeightM(trace)) / GRAVITY);
     const flight = ramp(Math.abs(seg.flightS! / expectedS - 1) - FLIGHT_TOL, FLIGHT_FALL);
     const tilt = ramp(landingTiltDeg(trace, seg) - TILT_FREE_DEG, TILT_FALL_DEG);
     const issues = [...base.issues];
