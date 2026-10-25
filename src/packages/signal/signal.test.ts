@@ -286,14 +286,15 @@ describe('analyzeRep on bad data', () => {
     }
   });
 
-  it('rejects an impact sample at or below 1 g, which leaves no first lobe', () => {
+  it('treats a first impact sample at or below 1 g as part of the descent and keeps the numbers finite', () => {
     const samples = base.samples.map((s, i) => {
       if (i !== 78) return s;
       const k = (9.81 - 0.2) / Math.hypot(s.ax, s.ay, s.az);
       return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
     });
-    const result = rejected({ ...base, samples });
-    expect(result.ok === false && result.reasons).toEqual(['no-drop-found']);
+    const result = analyzeRep({ ...base, samples });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(Object.values(result.features).every(Number.isFinite)).toBe(true);
   });
 
   it('never accepts a rep with a non-finite number in it', () => {
@@ -321,5 +322,43 @@ describe('analyzeRep sample gaps', () => {
 
   it('accepts a gap that starts more than 1 s after the impact', () => {
     expect(analyzeRep(without(3.0, 3.3)).ok).toBe(true);
+  });
+});
+
+describe('analyzeRep segmentation', () => {
+  /** Scales |a| of the samples in [from, to) to `mag`, keeping the direction. */
+  const withMagnitude = (trace: ReturnType<typeof synthRep>, from: number, to: number, mag: number) => ({
+    ...trace,
+    samples: trace.samples.map((s) => {
+      if (s.t < from || s.t >= to) return s;
+      const k = mag / Math.hypot(s.ax, s.ay, s.az);
+      return { ...s, ax: s.ax * k, ay: s.ay * k, az: s.az * k };
+    }),
+  });
+
+  it('takes the real drop, not an earlier dip and bump, as the impact', () => {
+    const clean = synthRep({ hoverS: 2, durationS: 6 });
+    const moved = withMagnitude(withMagnitude(clean, 0.4, 0.6, 8.5), 0.6, 0.7, 13.5);
+    const result = analyzeRep(moved);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.impactSpeed).toBeCloseTo(0.6, 1);
+  });
+
+  it('ignores a spike at the first sample when a real drop follows', () => {
+    const trace = synthRep({ noise: 0 });
+    const spiked = { ...trace, samples: trace.samples.map((s, i) => (i === 0 ? { ...s, ay: 30 } : s)) };
+    expect(analyzeRep(spiked).ok).toBe(true);
+  });
+
+  it('follows a descent that a single bounce sample interrupts', () => {
+    const trace = synthRep({ dropS: 0.3 });
+    const dropAt = 1.3 - 0.05;
+    const bounced = withMagnitude(trace, dropAt - 0.017, dropAt, 10.2);
+    expect(analyzeRep(bounced).ok).toBe(true);
+  });
+
+  it('calls a hover window 10% short of the minimum not-still', () => {
+    const window = hoverOf({}).slice(0, 17);
+    expect(assessHover(window, 'sit-drop').reasons).toEqual(['not-still']);
   });
 });

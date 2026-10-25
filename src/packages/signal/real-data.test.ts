@@ -3,27 +3,28 @@ import type { RepResult, Trace } from '../domain';
 import { loadFixture } from '../testkit';
 import { analyzeRep, buildReference } from './index';
 
-/** Five sit-drops on a desk chair, iPhone. Rep 1 was done badly on purpose: the phone sat off the sternum. */
-const traces = loadFixture('desk-chair-set1').traces;
-const good = traces.slice(1);
-
+/**
+ * Two real sets of five sit-drops, iPhone in Firefox: a desk chair (rep 1 done badly on purpose, the
+ * phone was off the sternum) and a soft living-room couch (rep 1 has a bump in the hover).
+ */
 const accepted = (trace: Trace) => {
   const result = analyzeRep(trace);
   if (!result.ok) throw new Error(`rejected: ${result.reasons.join(', ')}`);
   return result;
 };
+const verdictOf = (trace: Trace) => {
+  const r = analyzeRep(trace);
+  return r.ok ? 'ok' : r.reasons.join(',');
+};
 
-describe('analyzeRep on the real desk-chair recording', () => {
+describe('analyzeRep on the real desk-chair set', () => {
   it('accepts the four good reps', () => {
-    const got = good.map((t) => {
-      const r = analyzeRep(t);
-      return r.ok ? 'ok' : r.reasons.join(',');
-    });
-    expect(got).toEqual(['ok', 'ok', 'ok', 'ok']);
+    const traces = loadFixture('desk-chair-set1').traces.slice(1);
+    expect(traces.map(verdictOf)).toEqual(['ok', 'ok', 'ok', 'ok']);
   });
 
   it('gives the good reps finite, plausible features', () => {
-    for (const trace of good) {
+    for (const trace of loadFixture('desk-chair-set1').traces.slice(1)) {
       const { features, impactSpeed, leanDeg } = accepted(trace);
       expect(impactSpeed).toBeGreaterThan(0.3);
       expect(impactSpeed).toBeLessThan(2);
@@ -39,33 +40,78 @@ describe('analyzeRep on the real desk-chair recording', () => {
   });
 
   it('measures impact speeds within 35% of their median across the good reps', () => {
-    const speeds = good.map((t) => accepted(t).impactSpeed).sort((a, b) => a - b);
+    const speeds = loadFixture('desk-chair-set1')
+      .traces.slice(1)
+      .map((t) => accepted(t).impactSpeed)
+      .sort((a, b) => a - b);
     const median = (speeds[1]! + speeds[2]!) / 2;
     for (const v of speeds) expect(Math.abs(v - median) / median).toBeLessThan(0.35);
   });
 
   it('accepts the good reps when every time is 100 s later', () => {
-    for (const trace of good) {
+    for (const trace of loadFixture('desk-chair-set1').traces.slice(1)) {
       const shifted = { ...trace, samples: trace.samples.map((s) => ({ ...s, t: s.t + 100 })) };
       expect(accepted(shifted).impactSpeed).toBeCloseTo(accepted(trace).impactSpeed, 6);
     }
   });
 
-  it('ignores the 0.3 s stalls that fall long after the impact', () => {
-    const stalled = good.filter((t) => t.samples.some((s, i) => i > 0 && s.t - t.samples[i - 1]!.t > 0.3));
-    expect(stalled).toHaveLength(3);
-    for (const trace of stalled) expect(analyzeRep(trace).ok).toBe(true);
-  });
-
-  it('does not let the badly placed rep 1 through as a normal rep of the set', () => {
+  it('flags the badly placed rep first when the five reps form a reference', () => {
+    const traces = loadFixture('desk-chair-set1').traces;
     const results: RepResult[] = traces.map((t) => analyzeRep(t));
+    const leans = results.map((r) => (r.ok ? r.leanDeg : 0));
+    const odd = leans.indexOf(Math.max(...leans));
     const reference = buildReference(results, 'sit-drop');
     expect(reference.ok).toBe(false);
-    if (!reference.ok) expect(reference.outliers[0]).toBe(0);
+    if (!reference.ok) expect(reference.outliers[0]).toBe(odd);
   });
 
-  it('builds a reference from the good reps with a fifth good rep added', () => {
+  it('builds a reference from the good reps', () => {
+    const good = loadFixture('desk-chair-set1').traces.slice(1);
     const results = [...good, good[0]!].map((t) => analyzeRep(t));
     expect(buildReference(results, 'sit-drop').ok).toBe(true);
+  });
+});
+
+describe('analyzeRep on the real couch set', () => {
+  const couch = () => loadFixture('couch-set1').traces;
+
+  it('accepts the reps with a clean hover and a shallow, broken descent', () => {
+    const t = couch();
+    expect([1, 2, 4].map((i) => verdictOf(t[i]!))).toEqual(['ok', 'ok', 'ok']);
+  });
+
+  it('rejects the rep with a bump in the hover as not-still', () => {
+    expect(verdictOf(couch()[0]!)).toBe('not-still');
+  });
+
+  it('rejects the rep whose legs were still moving in the hover as not-still', () => {
+    expect(verdictOf(couch()[3]!)).toBe('not-still');
+  });
+
+  it('keeps the soft-couch features finite and plausible', () => {
+    for (const i of [1, 2, 4]) {
+      const { features, impactSpeed } = accepted(couch()[i]!);
+      expect(impactSpeed).toBeGreaterThan(0.3);
+      expect(impactSpeed).toBeLessThan(2);
+      expect(features.stopTime).toBeLessThan(0.6);
+      expect(features.peakOverV).toBeGreaterThan(3);
+    }
+  });
+});
+
+describe('analyzeRep with gaps in the real sets', () => {
+  it('does not reject a rep for a stall that falls long after the impact', () => {
+    let checked = 0;
+    for (const set of ['desk-chair-set1', 'couch-set1']) {
+      for (const trace of loadFixture(set).traces) {
+        const { samples } = trace;
+        const peak = samples.reduce((best, s, i) => (Math.hypot(s.ax, s.ay, s.az) > Math.hypot(samples[best]!.ax, samples[best]!.ay, samples[best]!.az) ? i : best), 0);
+        const stall = samples.findIndex((s, i) => i > 0 && s.t - samples[i - 1]!.t > 0.3);
+        if (stall < 0 || samples[stall]!.t - samples[peak]!.t < 2) continue;
+        checked++;
+        expect(verdictOf(trace)).not.toContain('low-sample-rate');
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });
