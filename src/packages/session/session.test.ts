@@ -181,3 +181,9 @@ describe('rejectMessage', () => {
     messages.forEach((m) => expect(m.length).toBeGreaterThan(0));
   });
 });
+
+describe('rejectMessage for rig reasons', () => {
+  it.each(['flight-mismatch', 'tilted-landing'] as const)('gives %s a fix message', (reason) => {
+    expect(rejectMessage(reason)).toMatch(/\S/);
+  });
+});
